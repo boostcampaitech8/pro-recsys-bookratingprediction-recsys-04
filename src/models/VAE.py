@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+# 인코더
 class Encoder(nn.Module):
     def __init__(self, input_dim, hidden_dim, latent_dim):
         super().__init__()
@@ -16,6 +17,7 @@ class Encoder(nn.Module):
         logvar = self.logvar(x)
         return mu, logvar
 
+# 디코더
 class Decoder(nn.Module):
     def __init__(self, latent_dim, hidden_dim, output_dim):
         super().__init__()
@@ -29,11 +31,12 @@ class Decoder(nn.Module):
         x = self.fc(x)
         return x
 
+# 인코더-디코더 결합
 class VAE(nn.Module):
     def __init__(self, args, data):
         super().__init__()
         self.encoder = Encoder(args.input_dim, args.hidden_dim, args.latent_dim)
-        self.decoder = Decoder(args.latent_dim, args.hidden_dim, args.input_dim)    # output_dim 굳이 추가하기 싫어서 input_dim 재사용
+        self.decoder = Decoder(args.latent_dim, args.hidden_dim, args.input_dim)    # args에 output_dim 굳이 추가하기 싫어서 input_dim 재사용
 
     def reparemeterize(self, mu, logvar):
         eps = torch.randn_like(logvar)
@@ -44,4 +47,5 @@ class VAE(nn.Module):
         z = self.reparemeterize(mu, logvar)
         x_hat = self.decoder(z)
 
-        return x_hat, mu, log_var
+        # loss 계산은 별도의 함수에서 처리할 수 있게 하기 위해 mu, logvar도 반환
+        return x_hat, mu, logvar
