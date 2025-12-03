@@ -43,10 +43,19 @@ def train(args, model, dataloader, logger, setting):
                 x, y = [data['user_book_vector'].to(args.device), data['img_vector'].to(args.device)], data['rating'].to(args.device)
             elif args.model_args[args.model].datatype == 'text':
                 x, y = [data['user_book_vector'].to(args.device), data['user_summary_vector'].to(args.device), data['book_summary_vector'].to(args.device)], data['rating'].to(args.device)
+            elif args.model_args[args.model].datatype == 'sparse':
+                x, y = data.to(args.device), data.to(args.device)
             else:
                 x, y = data[0].to(args.device), data[1].to(args.device)
-            y_hat = model(x)
-            loss = loss_fn(y_hat, y.float())
+            
+            if args.model_args[args.model].datatype == 'sparse':
+                y_hat, mu, logvar = model(x)
+                loss = loss_fn(y_hat, y.float(), mu, logvar)
+                
+            else:
+                y_hat = model(x)
+                loss = loss_fn(y_hat, y.float())
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()

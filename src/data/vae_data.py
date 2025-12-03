@@ -61,8 +61,8 @@ def vae_data_split(args, data):
     data : dict
         data 내의 학습 데이터를 학습/검증 데이터(희소 행렬 형태)로 나누어 추가한 후 반환합니다.
     """
-    num_users = data['label2idx']['user_id'].max() + 1
-    num_items = data['label2idx']['isbn'].max() + 1
+    num_users = data['label2idx']['user_id'].values.max() + 1
+    num_items = data['label2idx']['isbn'].values.max() + 1
     
     if args.dataset.valid_ratio == 0:
         train_csr = csr_matrix((data['train']['rating'], (data['train']['user_id'], data['train']['isbn'])),
