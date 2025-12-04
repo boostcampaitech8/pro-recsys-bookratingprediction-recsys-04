@@ -67,6 +67,7 @@ def main(args, wandb=None):
     print(f'--------------- SAVE {args.model} PREDICT ---------------')
     submission = pd.read_csv(args.dataset.data_path + 'sample_submission.csv')
     submission['rating'] = predicts
+    submission['rating'] = submission['rating'].clip(1, 10)
 
     filename = setting.get_submit_filename(args)
     print(f'Save Predict: {filename}')
