@@ -2,19 +2,18 @@
 # 직접 하이퍼파라미터를 추가하여 관리할 수 있습니다.
 
 memo: |-
-    남겨둘 메모가 있다면 여기에.
-    여러 줄로도 작성 가능
-    wandb 사용 시 wandb의 description으로 사용됩니다.
+    VAE를 사용할 때는 loss를 VAELoss로 설정해주어야 합니다.
+    다른 모델들은 RMSELoss를 쓰면 됩니다.
 
 
 # 아래의 일곱 항목들은 argparser로 받은 인자를 우선적으로 사용합니다.
 #   $ python main.py --config config.yaml --seed 2024
 #   과 같이 실행할 경우 seed는 0이 아닌 2024로 설정됩니다.
 predict: False  # 예측할 경우 True로 설정
-checkpoint: 'saved/checkpoints/FM_best.pt'   # 예측 시 불러올 모델 경로
+checkpoint: 'saved/checkpoint/20251204_073723_VAE_best.pt'   # 예측 시 불러올 모델 경로
 seed: 0         # 시드 고정
 device: cuda    # 가능한 값 : cpu, cuda, mps
-model: FM       # 모델 선택
+model: VAE       # 모델 선택
 wandb: False                            # wandb 사용 여부
 wandb_project: 'book-rating-prediction' # wandb 프로젝트 이름
 run_name: ''                            # wandb 실행 이름. 빈 문자열일 경우 자동 생성
@@ -106,13 +105,17 @@ model_args:     # model에 해당하는 파라미터만 실질적으로 사용�
         devices: '0'            # 사용할 GPU 디바이스 번호
         verbose: True          # 학습 과정 출력 여부
 
+    VAE:
+        datatype: sparse
+        hidden_dim: 512
+        latent_dim: 64
 
 dataset:
-    data_path: data/    # 데이터셋 경로
+    data_path: /data/ephemeral/home/data/    # 데이터셋 경로
     valid_ratio: 0.2    # Train / Vaildation split
 
 dataloader:
-    batch_size: 1024    # 배치 사이즈
+    batch_size: 512    # 배치 사이즈
     shuffle: True       # 학습 데이터 셔플 여부
     num_workers: 0      # 멀티프로세서 수. 0: 메인프로세서만 사용
 

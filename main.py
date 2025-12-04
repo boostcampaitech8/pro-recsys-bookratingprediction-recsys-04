@@ -81,6 +81,7 @@ def main(args, wandb=None):
     print(f'--------------- SAVE {args.model} PREDICT ---------------')
     submission = pd.read_csv(args.dataset.data_path + 'sample_submission.csv')
     submission['rating'] = predicts
+    submission['rating'] = submission['rating'].clip(1, 10)
 
     filename = setting.get_submit_filename(args)
     print(f'Save Predict: {filename}')
@@ -105,7 +106,7 @@ if __name__ == "__main__":
     arg('--checkpoint', '-ckpt', '--ckpt', type=str, 
         help='학습을 생략할 때 사용할 모델을 설정할 수 있습니다. 단, 하이퍼파라미터 세팅을 모두 정확하게 입력해야 합니다.')
     arg('--model', '-m', '--m', type=str,
-        choices=['FM', 'FFM', 'DeepFM', 'NCF', 'WDN', 'DCN', 'Image_FM', 'Image_DeepFM', 'Text_FM', 'Text_DeepFM', 'ResNet_DeepFM', 'CatBoost'],
+        choices=['FM', 'FFM', 'DeepFM', 'NCF', 'WDN', 'DCN', 'Image_FM', 'Image_DeepFM', 'Text_FM', 'Text_DeepFM', 'ResNet_DeepFM', 'CatBoost', 'VAE'],
         help='학습 및 예측할 모델을 선택할 수 있습니다.')
     arg('--seed', '-s', '--s', type=int,
         help='데이터분할 및 모델 초기화 시 사용할 시드를 설정할 수 있습니다.')
