@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 from scipy.sparse import csr_matrix
 import numpy as np
 
-def vae_data_load(args):
+def sparse_data_load(args):
     """
     Parameters
     ----------
@@ -48,7 +48,7 @@ def vae_data_load(args):
 
     return data
 
-def vae_data_split(args, data):
+def sparse_data_split(args, data):
     """
     Parameters
     ----------
@@ -62,10 +62,11 @@ def vae_data_split(args, data):
     data : dict
         data 내의 학습 데이터를 학습/검증 데이터(희소 행렬 형태)로 나누어 추가한 후 반환합니다.
     """
-    num_users = data['label2idx']['user_id'].values.max() + 1
-    num_items = data['label2idx']['isbn'].values.max() + 1
+    num_users = max(data['label2idx']['user_id'].values()) + 1
+    num_items = max(data['label2idx']['isbn'].values()) + 1
 
-    data['input_dim'] = num_items
+    data['num_users'] = num_users
+    data['num_items'] = num_items
     
     if args.dataset.valid_ratio == 0:
         train_csr = csr_matrix((data['train']['rating'], (data['train']['user_id'], data['train']['isbn'])),
@@ -77,8 +78,7 @@ def vae_data_split(args, data):
                                             data['train'],
                                             test_size=args.dataset.valid_ratio,
                                             random_state=args.seed,
-                                            stratify=data['train']['user_id'],  # 한 유저에서 적절하게 분배되도록 stratify
-                                            shuffle=True
+                                            shuffle=True,
                                             )
 
         train_csr = csr_matrix((train_df['rating'], (train_df['user_id'], train_df['isbn'])),
@@ -100,7 +100,7 @@ class SparseDataset(Dataset):
         self.test_data = test_data
     
     def __len__(self):
-        return len(self.train_data)
+        return self.train_data.shape[0]
     
     def __getitem__(self, idx):
         # 학습하기 위해 csr matrix를 dense matrix로 변환
@@ -113,7 +113,7 @@ class SparseDataset(Dataset):
         else:
             return torch.tensor(train_matrix, dtype=torch.float32)
 
-def vae_data_loader(args, data):
+def sparse_data_loader(args, data):
     """
     Parameters
     ----------

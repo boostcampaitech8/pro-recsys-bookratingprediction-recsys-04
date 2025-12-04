@@ -35,7 +35,7 @@ class Decoder(nn.Module):
 class VAE(nn.Module):
     def __init__(self, args, data):
         super().__init__()
-        self.input_dim = data['input_dim']
+        self.input_dim = data['num_items']
         self.encoder = Encoder(self.input_dim, args.hidden_dim, args.latent_dim)
         self.decoder = Decoder(args.latent_dim, args.hidden_dim, self.input_dim)    # output_dim 굳이 추가하기 싫어서 input_dim 재사용
 

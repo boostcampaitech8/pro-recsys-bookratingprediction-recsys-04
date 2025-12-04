@@ -2,6 +2,7 @@
 # from .FFM import FieldAwareFactorizationMachine as FFM
 # from .DeepFM import DeepFM
 from .NCF import NeuralCollaborativeFiltering as NCF
+from .VAE import VAE
 # from .WDN import WideAndDeep as WDN
 # from .DCN import DeepCrossNetwork as DCN
 # from .FM_Image import Image_FM, Image_DeepFM, ResNet_DeepFM

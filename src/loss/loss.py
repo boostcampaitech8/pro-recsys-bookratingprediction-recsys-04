@@ -18,13 +18,7 @@ class VAELoss(nn.Module):
         super(VAELoss, self).__init__()
     
     def reconstruction_loss(self, y_hat, y):
-        # 0인 경우 (interaction 없는 경우)는 제외
-        mask = y != 0
-
-        y_hat = y_hat[mask]
-        y = y[mask]
-
-        loss = MSELoss()(y_hat, y)
+        loss = MSELoss(reduction="sum")(y_hat, y)
         return loss
     
     def forward(self, y_hat, y, mu, logvar):
