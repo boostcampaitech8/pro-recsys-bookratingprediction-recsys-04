@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+import torch.nn.functional as F
 
 # 인코더
 class Encoder(nn.Module):
@@ -39,6 +39,7 @@ class VAE(nn.Module):
     def __init__(self, args, data):
         super().__init__()
         self.input_dim = data["num_items"]
+        self.dropout = nn.Dropout(args.dropout)
         self.encoder = Encoder(self.input_dim, args.hidden_dim, args.latent_dim)
         self.decoder = Decoder(
             args.latent_dim, args.hidden_dim, self.input_dim
@@ -49,6 +50,8 @@ class VAE(nn.Module):
         return mu + torch.exp(logvar / 2) * eps
 
     def forward(self, x):
+        x = F.normalize(x, dim=1)
+        x = self.dropout(x)
         mu, logvar = self.encoder(x)
 
         # logvar 안 잘라주면 바로 기울기 폭발해버리는 현상 발생함
