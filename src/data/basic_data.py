@@ -17,8 +17,6 @@ def basic_data_load(args):
     """
 
     ######################## DATA LOAD
-    # users = pd.read_csv(args.dataset.data_path + 'users.csv')
-    # books = pd.read_csv(args.dataset.data_path + 'books.csv')
     train_df = pd.read_csv(args.dataset.data_path + 'train_ratings.csv')
     test_df = pd.read_csv(args.dataset.data_path + 'test_ratings.csv')
     sub = pd.read_csv(args.dataset.data_path + 'sample_submission.csv')
@@ -30,12 +28,18 @@ def basic_data_load(args):
     # 라벨 인코딩하고 인덱스 정보를 저장
     label2idx, idx2label = {}, {}
     for col in sparse_cols:
-        all_df[col] = all_df[col].fillna('unknown')
+        # 1. 전체 데이터 기준으로 결측치 처리 및 유니크 라벨 추출
+        all_df[col] = all_df[col].fillna("unknown")
         unique_labels = all_df[col].astype("category").cat.categories
-        label2idx[col] = {label:idx for idx, label in enumerate(unique_labels)}
-        idx2label[col] = {idx:label for idx, label in enumerate(unique_labels)}
-        train_df[col] = train_df[col].fillna('unknown').map(label2idx[col])
-        test_df[col] = test_df[col].fillna('unknown').map(label2idx[col])
+
+        # 2. 사전 생성
+        label2idx[col] = {label: idx for idx, label in enumerate(unique_labels)}
+        idx2label[col] = {idx: label for idx, label in enumerate(unique_labels)}
+
+        # 3. [중요] 생성된 사전을 이용해 train/test 각각 매핑 (일관성 유지)
+        # 데이터프레임 원본에도 fillna를 해줘야 매핑 시 에러가 안 납니다.
+        train_df[col] = train_df[col].fillna("unknown").map(label2idx[col])
+        test_df[col] = test_df[col].fillna("unknown").map(label2idx[col])
 
     field_dims = [len(label2idx[col]) for col in sparse_cols]
 

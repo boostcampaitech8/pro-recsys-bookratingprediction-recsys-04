@@ -30,12 +30,19 @@ def sparse_data_load(args):
     # 라벨 인코딩하고 인덱스 정보를 저장
     label2idx, idx2label = {}, {}
     for col in sparse_cols:
-        all_df[col] = all_df[col].fillna('unknown')
+        # 1. 전체 데이터 기준으로 결측치 처리 및 유니크 라벨 추출
+        all_df[col] = all_df[col].fillna("unknown")
         unique_labels = all_df[col].astype("category").cat.categories
-        label2idx[col] = {label:idx for idx, label in enumerate(unique_labels)}
-        idx2label[col] = {idx:label for idx, label in enumerate(unique_labels)}
-        train_df[col] = train_df[col].fillna('unknown').map(label2idx[col])
-        test_df[col] = test_df[col].fillna('unknown').map(label2idx[col])
+
+        # 2. 사전 생성
+        label2idx[col] = {label: idx for idx, label in enumerate(unique_labels)}
+        idx2label[col] = {idx: label for idx, label in enumerate(unique_labels)}
+
+        # 3. [중요] 생성된 사전을 이용해 train/test 각각 매핑 (일관성 유지)
+        # 데이터프레임 원본에도 fillna를 해줘야 매핑 시 에러가 안 납니다.
+        train_df[col] = train_df[col].fillna("unknown").map(label2idx[col])
+        test_df[col] = test_df[col].fillna("unknown").map(label2idx[col])
+
 
     data = {
             'train':train_df,
@@ -80,7 +87,7 @@ def sparse_data_split(args, data):
                                             random_state=args.seed,
                                             shuffle=True,
                                             )
-
+        # csr_matrix로 변환해서 메모리 효율적으로 함
         train_csr = csr_matrix((train_df['rating'], (train_df['user_id'], train_df['isbn'])),
                                shape=(num_users, num_items))
         valid_csr = csr_matrix((valid_df['rating'], (valid_df['user_id'], valid_df['isbn'])),
@@ -108,10 +115,11 @@ class SparseDataset(Dataset):
 
         if self.test_data is not None:
             test_matrix = self.test_data[idx].toarray().squeeze()
-            return torch.tensor(train_matrix, dtype=torch.float32), torch.tensor(test_matrix, dtype=torch.float32)
+            return (torch.from_numpy(train_matrix).float(), 
+                    torch.from_numpy(test_matrix).float())
             
         else:
-            return torch.tensor(train_matrix, dtype=torch.float32)
+            return torch.from_numpy(train_matrix).float()
 
 def sparse_data_loader(args, data):
     """
@@ -139,8 +147,8 @@ def sparse_data_loader(args, data):
     test_dataset = SparseDataset(data['train_csr'], data['test_csr'])
 
     train_dataloader = DataLoader(train_dataset, batch_size=args.dataloader.batch_size, shuffle=args.dataloader.shuffle, num_workers=args.dataloader.num_workers)
-    valid_dataloader = DataLoader(valid_dataset, batch_size=args.dataloader.batch_size, shuffle=False, num_workers=args.dataloader.num_workers) if args.dataset.valid_ratio != 0 else None
-    test_dataloader = DataLoader(test_dataset, batch_size=args.dataloader.batch_size, shuffle=False, num_workers=args.dataloader.num_workers)
+    valid_dataloader = DataLoader(valid_dataset, batch_size=args.dataloader.batch_size * 4, shuffle=False, num_workers=args.dataloader.num_workers) if args.dataset.valid_ratio != 0 else None
+    test_dataloader = DataLoader(test_dataset, batch_size=args.dataloader.batch_size * 4, shuffle=False, num_workers=args.dataloader.num_workers)
 
     data['train_dataloader'], data['valid_dataloader'], data['test_dataloader'] = train_dataloader, valid_dataloader, test_dataloader
 
