@@ -61,7 +61,7 @@ def train(args, model, dataloader, logger, setting):
                     data["book_summary_vector"].to(args.device),
                 ], data["rating"].to(args.device)
             elif args.model_args[args.model].datatype == "sparse":
-                x, y = data.to(args.device), data.to(args.device)
+                x = y = data.to(args.device)
             else:
                 x, y = data[0].to(args.device), data[1].to(args.device)
 

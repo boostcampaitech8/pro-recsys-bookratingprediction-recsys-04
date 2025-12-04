@@ -46,7 +46,7 @@ class VAE(nn.Module):
     def forward(self, x):
         mu, logvar = self.encoder(x)
         z = self.reparemeterize(mu, logvar)
-        x_hat = self.decoder(z)
+        y_hat = self.decoder(z)
 
         # loss 계산은 별도의 함수에서 처리할 수 있게 하기 위해 mu, logvar도 반환
-        return x_hat, mu, logvar
+        return y_hat, mu, logvar
