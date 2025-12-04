@@ -2,19 +2,18 @@
 # 직접 하이퍼파라미터를 추가하여 관리할 수 있습니다.
 
 memo: |-
-    남겨둘 메모가 있다면 여기에.
-    여러 줄로도 작성 가능
-    wandb 사용 시 wandb의 description으로 사용됩니다.
+    VAE를 사용할 때는 loss를 VAELoss로 설정해주어야 합니다.
+    다른 모델들은 RMSELoss를 쓰면 됩니다.
 
 
 # 아래의 일곱 항목들은 argparser로 받은 인자를 우선적으로 사용합니다.
 #   $ python main.py --config config.yaml --seed 2024
 #   과 같이 실행할 경우 seed는 0이 아닌 2024로 설정됩니다.
 predict: False  # 예측할 경우 True로 설정
-checkpoint: 'saved/checkpoint/20251203_062455_NCF_best.pt'   # 예측 시 불러올 모델 경로
+checkpoint: 'saved/checkpoint/20251204_073723_VAE_best.pt'   # 예측 시 불러올 모델 경로
 seed: 0         # 시드 고정
 device: cuda    # 가능한 값 : cpu, cuda, mps
-model: FM       # 모델 선택
+model: VAE       # 모델 선택
 wandb: False                            # wandb 사용 여부
 wandb_project: 'book-rating-prediction' # wandb 프로젝트 이름
 run_name: ''                            # wandb 실행 이름. 빈 문자열일 경우 자동 생성
@@ -114,7 +113,7 @@ dataloader:
 optimizer:
     type: AdamW         # 사용가능한 optimizer: torch.optim.Optimizer 클래스 (https://pytorch.org/docs/stable/optim.html#algorithms)
     args:               # 사용하고자 하는 클래스의 파라미터를 참고하여 추가해주시면 되며, 관계가 없는 파라미터는 무시됩니다.
-        lr: 2e-3            # 예) 모든 옵티마이저에서 사용되는 학습률
+        lr: 5e-4            # 예) 모든 옵티마이저에서 사용되는 학습률
         weight_decay: 1e-4  # 예) Adam 등 / L2 정규화 가중치
         amsgrad: False      # 예) Adam 등 / amsgrad 사용 여부
 

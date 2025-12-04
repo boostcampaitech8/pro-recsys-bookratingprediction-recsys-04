@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+
 # 인코더
 class Encoder(nn.Module):
     def __init__(self, input_dim, hidden_dim, latent_dim):
@@ -17,6 +18,7 @@ class Encoder(nn.Module):
         logvar = self.logvar(x)
         return mu, logvar
 
+
 # 디코더
 class Decoder(nn.Module):
     def __init__(self, latent_dim, hidden_dim, output_dim):
@@ -31,13 +33,16 @@ class Decoder(nn.Module):
         x = self.fc(x)
         return x
 
+
 # 인코더-디코더 결합
 class VAE(nn.Module):
     def __init__(self, args, data):
         super().__init__()
-        self.input_dim = data['num_items']
+        self.input_dim = data["num_items"]
         self.encoder = Encoder(self.input_dim, args.hidden_dim, args.latent_dim)
-        self.decoder = Decoder(args.latent_dim, args.hidden_dim, self.input_dim)    # output_dim 굳이 추가하기 싫어서 input_dim 재사용
+        self.decoder = Decoder(
+            args.latent_dim, args.hidden_dim, self.input_dim
+        )  # output_dim 굳이 추가하기 싫어서 input_dim 재사용
 
     def reparemeterize(self, mu, logvar):
         eps = torch.randn_like(logvar)
@@ -45,6 +50,10 @@ class VAE(nn.Module):
 
     def forward(self, x):
         mu, logvar = self.encoder(x)
+
+        # logvar 안 잘라주면 바로 기울기 폭발해버리는 현상 발생함
+        logvar = torch.clamp(logvar, min=-10, max=10)
+
         z = self.reparemeterize(mu, logvar)
         y_hat = self.decoder(z)
 
