@@ -95,7 +95,8 @@ def train(args, model, dataloader, logger, setting):
             # ReduceLROnPlateau 스케줄러는 여기서 valid_loss를 보고 step
             if args.lr_scheduler.use and args.lr_scheduler.type == "ReduceLROnPlateau":
                 lr_scheduler.step(valid_loss)
-
+                current_lr = optimizer.param_groups[0]["lr"]
+                print(f"\t>> Current LR after scheduler: {current_lr:.6f}")
             valid_metrics = dict()
             for metric in args.metrics:
                 metric_fn = getattr(loss_module, metric)().to(args.device)
@@ -172,23 +173,26 @@ def valid(args, model, dataloader, loss_fn):
     model.eval()
     total_loss = 0
 
-    for data in dataloader:
-        if args.model_args[args.model].datatype == "image":
-            x, y = [
-                data["user_book_vector"].to(args.device),
-                data["img_vector"].to(args.device),
-            ], data["rating"].to(args.device)
-        elif args.model_args[args.model].datatype == "text":
-            x, y = [
-                data["user_book_vector"].to(args.device),
-                data["user_summary_vector"].to(args.device),
-                data["book_summary_vector"].to(args.device),
-            ], data["rating"].to(args.device)
-        else:
-            x, y = data[0].to(args.device), data[1].to(args.device)
-        y_hat = model(x)
-        loss = loss_fn(y.float(), y_hat)
-        total_loss += loss.item()
+    with torch.no_grad():  # <-- 추가
+        for data in dataloader:
+            if args.model_args[args.model].datatype == "image":
+                x, y = [
+                    data["user_book_vector"].to(args.device),
+                    data["img_vector"].to(args.device),
+                ], data["rating"].to(args.device)
+            elif args.model_args[args.model].datatype == "text":
+                x, y = [
+                    data["user_book_vector"].to(args.device),
+                    data["user_summary_vector"].to(args.device),
+                    data["book_summary_vector"].to(args.device),
+                ], data["rating"].to(args.device)
+            else:
+                x, y = data[0].to(args.device), data[1].to(args.device)
+
+            y_hat = model(x)
+            # 순서 통일: (pred, target)
+            loss = loss_fn(y_hat, y.float())
+            total_loss += loss.item()
 
     return total_loss / len(dataloader)
 
