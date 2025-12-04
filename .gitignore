@@ -1,4 +1,11 @@
 /data
 .ipynb_checkpoints/
 .github/
-._*
+/ensemble.py
+/main.py
+/saved
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
