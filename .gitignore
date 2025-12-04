@@ -4,3 +4,4 @@
 ._*
 /saved
 __pycache__/
+wandb/
