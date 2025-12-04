@@ -3,6 +3,7 @@ from sklearn.model_selection import train_test_split
 import torch
 from torch.utils.data import Dataset, DataLoader
 from scipy.sparse import csr_matrix
+import numpy as np
 
 def vae_data_load(args):
     """
@@ -63,6 +64,8 @@ def vae_data_split(args, data):
     """
     num_users = data['label2idx']['user_id'].values.max() + 1
     num_items = data['label2idx']['isbn'].values.max() + 1
+
+    data['input_dim'] = num_items
     
     if args.dataset.valid_ratio == 0:
         train_csr = csr_matrix((data['train']['rating'], (data['train']['user_id'], data['train']['isbn'])),
@@ -85,25 +88,30 @@ def vae_data_split(args, data):
         data['train_csr'] = train_csr
         data['valid_csr'] = valid_csr
 
-    test_csr = csr_matrix((data['test']['rating'], (data['test']['user_id'], data['test']['isbn'])),
+    test_csr = csr_matrix((np.ones(len(data['test'])), (data['test']['user_id'], data['test']['isbn'])),
                                   shape=(num_users, num_items))
     data['test_csr'] = test_csr
 
     return data
 
 class SparseDataset(Dataset):
-    def __init__(self, data):
-        self.data = data
+    def __init__(self, train_data, test_data = None):   # test_data라고 돼있지만 valid data도 이걸 씁니다
+        self.train_data = train_data
+        self.test_data = test_data
     
     def __len__(self):
-        return len(self.data)
+        return len(self.train_data)
     
     def __getitem__(self, idx):
         # 학습하기 위해 csr matrix를 dense matrix로 변환
-        dense_matrix = self.data[idx].toarray().squeeze()
-        dense_matrix = torch.tensor(dense_matrix, dtype=torch.float32)
+        train_matrix = self.train_data[idx].toarray().squeeze()
 
-        return dense_matrix
+        if self.test_data is not None:
+            test_matrix = self.test_data[idx].toarray().squeeze()
+            return torch.tensor(train_matrix, dtype=torch.float32), torch.tensor(test_matrix, dtype=torch.float32)
+            
+        else:
+            return torch.tensor(train_matrix, dtype=torch.float32)
 
 def vae_data_loader(args, data):
     """
@@ -127,8 +135,8 @@ def vae_data_loader(args, data):
     """
 
     train_dataset = SparseDataset(data['train_csr'])
-    valid_dataset = SparseDataset(data['valid_csr']) if args.dataset.valid_ratio != 0 else None
-    test_dataset = SparseDataset(data['test_csr'])
+    valid_dataset = SparseDataset(data['train_csr'], data['valid_csr']) if args.dataset.valid_ratio != 0 else None
+    test_dataset = SparseDataset(data['train_csr'], data['test_csr'])
 
     train_dataloader = DataLoader(train_dataset, batch_size=args.dataloader.batch_size, shuffle=args.dataloader.shuffle, num_workers=args.dataloader.num_workers)
     valid_dataloader = DataLoader(valid_dataset, batch_size=args.dataloader.batch_size, shuffle=False, num_workers=args.dataloader.num_workers) if args.dataset.valid_ratio != 0 else None
