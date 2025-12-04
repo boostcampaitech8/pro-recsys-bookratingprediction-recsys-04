@@ -101,14 +101,13 @@ model_args:     # model에 해당하는 파라미터만 실질적으로 사용�
         datatype: sparse
         hidden_dim: 512
         latent_dim: 64
-        dropout: 0.4
 
 dataset:
     data_path: /data/ephemeral/home/data/    # 데이터셋 경로
     valid_ratio: 0.2    # Train / Vaildation split
 
 dataloader:
-    batch_size: 1024    # 배치 사이즈
+    batch_size: 512    # 배치 사이즈
     shuffle: True       # 학습 데이터 셔플 여부
     num_workers: 0      # 멀티프로세서 수. 0: 메인프로세서만 사용
 
@@ -119,7 +118,7 @@ optimizer:
         weight_decay: 1e-4  # 예) Adam 등 / L2 정규화 가중치
         amsgrad: False      # 예) Adam 등 / amsgrad 사용 여부
 
-loss: RMSELoss          # 직접 정의한 loss 클래스 또는 torch.nn.Module 클래스 (https://pytorch.org/docs/stable/nn.html#loss-functions)
+loss: VAELoss          # 직접 정의한 loss 클래스 또는 torch.nn.Module 클래스 (https://pytorch.org/docs/stable/nn.html#loss-functions)
 
 lr_scheduler:
     use: False                  # True: 사용 / False: 사용하지 않음 (단, valid_ratio가 0일 경우 validation set이 없어 사용 불가)
@@ -130,10 +129,10 @@ lr_scheduler:
         step_size: 10           # 예) StepLR / 학습률 감소 주기 (필수)
         gamma: 0.1              # 예) StepLR 등 / 학습률 감소 비율
 
-metrics: [ MSELoss, MAELoss, RMSELoss ]  # 평가 지표. 직접 정의한 loss 클래스 또는 torch.nn.Module 클래스 (https://pytorch.org/docs/stable/nn.html#loss-functions)
+metrics: [ RMSELoss, VAELoss ]  # 평가 지표. 직접 정의한 loss 클래스 또는 torch.nn.Module 클래스 (https://pytorch.org/docs/stable/nn.html#loss-functions)
 
 train:
-    epochs: 10                          # 학습 에폭 수
+    epochs: 20                          # 학습 에폭 수
     log_dir: saved/log                  # 로그 저장 경로
     ckpt_dir: saved/checkpoint    # 모델 저장 경로
     submit_dir: saved/submit            # 예측 저장 경로
