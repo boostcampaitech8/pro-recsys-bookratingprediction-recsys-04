@@ -4,13 +4,17 @@ import torch
 from src.loss import loss as loss_module
 import torch.optim as optimizer_module
 import torch.optim.lr_scheduler as scheduler_module
+from scipy.sparse import csr_matrix, vstack
 
-
-METRIC_NAMES = {"RMSELoss": "RMSE", "MSELoss": "MSE", "MAELoss": "MAE"}
+METRIC_NAMES = {
+    "RMSELoss": "RMSE",
+    "MSELoss": "MSE",
+    "MAELoss": "MAE",
+    "VAELoss": "VAE",
+}
 
 
 def train(args, model, dataloader, logger, setting):
-
     if args.wandb:
         import wandb
 
@@ -70,17 +74,25 @@ def train(args, model, dataloader, logger, setting):
                     data["user_summary_vector"].to(args.device),
                     data["book_summary_vector"].to(args.device),
                 ], data["rating"].to(args.device)
+            elif args.model_args[args.model].datatype == "sparse":
+                x = y = data.to(args.device)
             else:
                 x, y = data[0].to(args.device), data[1].to(args.device)
 
-            y_hat = model(x)
-            loss = loss_fn(y_hat, y.float())
+            if args.model_args[args.model].datatype == "sparse":
+                y_hat, mu, logvar = model(x)
+                loss = loss_fn(y_hat * torch.sign(y), y.float(), mu, logvar)
+
+            else:
+                y_hat = model(x)
+                loss = loss_fn(y_hat, y.float())
+
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=5)
             optimizer.step()
             total_loss += loss.item()
 
-        # StepLR 등 일반 스케줄러는 여기서 step (Plateau 제외)
         if args.lr_scheduler.use and args.lr_scheduler.type != "ReduceLROnPlateau":
             lr_scheduler.step()
 
@@ -106,7 +118,6 @@ def train(args, model, dataloader, logger, setting):
                 valid_metrics[f"Valid {METRIC_NAMES[metric]}"] = valid_metric
             for metric, value in valid_metrics.items():
                 msg += f" | {metric}: {value:.3f}"
-
             print(msg)
             logger.log(
                 epoch=epoch + 1,
@@ -173,31 +184,44 @@ def valid(args, model, dataloader, loss_fn):
     model.eval()
     total_loss = 0
 
-    with torch.no_grad():  # <-- 추가
-        for data in dataloader:
-            if args.model_args[args.model].datatype == "image":
-                x, y = [
-                    data["user_book_vector"].to(args.device),
-                    data["img_vector"].to(args.device),
-                ], data["rating"].to(args.device)
-            elif args.model_args[args.model].datatype == "text":
-                x, y = [
-                    data["user_book_vector"].to(args.device),
-                    data["user_summary_vector"].to(args.device),
-                    data["book_summary_vector"].to(args.device),
-                ], data["rating"].to(args.device)
-            else:
-                x, y = data[0].to(args.device), data[1].to(args.device)
+    with torch.no_grad():
+        if args.model_args[args.model].datatype == "sparse":
+            for train_data, valid_data in dataloader:
+                train_data, valid_data = train_data.to(args.device), valid_data.to(
+                    args.device
+                )
+                y_hat, mu, logvar = model(train_data)
+                if isinstance(loss_fn, loss_module.VAELoss):
+                    loss = loss_fn(
+                        y_hat * torch.sign(valid_data), valid_data.float(), mu, logvar
+                    )
+                else:
+                    loss = loss_fn(y_hat * torch.sign(valid_data), valid_data.float())
+                total_loss += loss.item()
 
-            y_hat = model(x)
-            # 순서 통일: (pred, target)
-            loss = loss_fn(y_hat, y.float())
-            total_loss += loss.item()
+        else:
+            for data in dataloader:
+                if args.model_args[args.model].datatype == "image":
+                    x, y = [
+                        data["user_book_vector"].to(args.device),
+                        data["img_vector"].to(args.device),
+                    ], data["rating"].to(args.device)
+                elif args.model_args[args.model].datatype == "text":
+                    x, y = [
+                        data["user_book_vector"].to(args.device),
+                        data["user_summary_vector"].to(args.device),
+                        data["book_summary_vector"].to(args.device),
+                    ], data["rating"].to(args.device)
+                else:
+                    x, y = data[0].to(args.device), data[1].to(args.device)
+                y_hat = model(x)
+                loss = loss_fn(y_hat, y.float())
+                total_loss += loss.item()
 
     return total_loss / len(dataloader)
 
 
-def test(args, model, dataloader, setting, checkpoint=None):
+def test(args, model, data, setting, checkpoint=None):
     predicts = list()
     if checkpoint:
         model.load_state_dict(torch.load(checkpoint, weights_only=True))
@@ -212,21 +236,42 @@ def test(args, model, dataloader, setting, checkpoint=None):
         model.load_state_dict(torch.load(model_path, weights_only=True))
 
     model.eval()
-    with torch.no_grad():  # ⬅️ 요거 추가!
-        for data in dataloader["test_dataloader"]:
-            if args.model_args[args.model].datatype == "image":
-                x = [
-                    data["user_book_vector"].to(args.device),
-                    data["img_vector"].to(args.device),
-                ]
-            elif args.model_args[args.model].datatype == "text":
-                x = [
-                    data["user_book_vector"].to(args.device),
-                    data["user_summary_vector"].to(args.device),
-                    data["book_summary_vector"].to(args.device),
-                ]
-            else:
-                x = data[0].to(args.device)
 
-            y_hat = model(x)
-            predicts.extend(y_hat.tolist())
+    with torch.no_grad():
+        if args.model_args[args.model].datatype == "sparse":
+            predicts_list = []
+
+            for train_data, test_data in data["test_dataloader"]:
+                x = train_data.to(args.device)
+                test_data = test_data.to(args.device)
+                y_hat, _, _ = model(x)
+                y_hat = y_hat * torch.sign(test_data)
+                y_hat = y_hat.cpu().detach().numpy()
+                predicts_list.append(csr_matrix(y_hat))
+
+            predicts_csr = vstack(predicts_list)
+
+            rows = data["test"]["user_id"].values
+            cols = data["test"]["isbn"].values
+
+            predicts = predicts_csr[rows, cols].A1.tolist()
+
+        else:
+            for data in data["test_dataloader"]:
+                if args.model_args[args.model].datatype == "image":
+                    x = [
+                        data["user_book_vector"].to(args.device),
+                        data["img_vector"].to(args.device),
+                    ]
+                elif args.model_args[args.model].datatype == "text":
+                    x = [
+                        data["user_book_vector"].to(args.device),
+                        data["user_summary_vector"].to(args.device),
+                        data["book_summary_vector"].to(args.device),
+                    ]
+                else:
+                    x = data[0].to(args.device)
+                y_hat = model(x)
+                predicts.extend(y_hat.tolist())
+
+    return predicts

@@ -3,14 +3,12 @@ from sklearn.model_selection import train_test_split
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 
-
 def basic_data_load(args):
     """
     Parameters
     ----------
     args.dataset.data_path : str
         데이터 경로를 설정할 수 있는 parser
-
     Returns
     -------
     data : dict
@@ -46,15 +44,14 @@ def basic_data_load(args):
     field_dims = [len(label2idx[col]) for col in sparse_cols]
 
     data = {
-        "train": train_df,
-        "test": test_df.drop(
-            ["rating"], axis=1
-        ),  # test에는 rating이 없을 수 있으니 확인 필요
-        "field_dims": field_dims,
-        "label2idx": label2idx,
-        "idx2label": idx2label,
-        "sub": sub,
-    }
+            'train':train_df,
+            'test':test_df.drop(['rating'], axis=1),
+            'field_dims':field_dims,
+            'label2idx':label2idx,
+            'idx2label':idx2label,
+            'sub':sub,
+            }
+
 
     return data
 
@@ -74,24 +71,19 @@ def basic_data_split(args, data):
         data 내의 학습 데이터를 학습/검증 데이터로 나누어 추가한 후 반환합니다.
     """
     if args.dataset.valid_ratio == 0:
-        data["X_train"] = data["train"].drop("rating", axis=1)
-        data["y_train"] = data["train"]["rating"]
+        data['X_train'] = data['train'].drop('rating', axis=1)
+        data['y_train'] = data['train']['rating']
 
     else:
         X_train, X_valid, y_train, y_valid = train_test_split(
-            data["train"].drop(["rating"], axis=1),
-            data["train"]["rating"],
-            test_size=args.dataset.valid_ratio,
-            random_state=args.seed,
-            shuffle=True,
-        )
-        data["X_train"], data["X_valid"], data["y_train"], data["y_valid"] = (
-            X_train,
-            X_valid,
-            y_train,
-            y_valid,
-        )
-
+                                                            data['train'].drop(['rating'], axis=1),
+                                                            data['train']['rating'],
+                                                            test_size=args.dataset.valid_ratio,
+                                                            random_state=args.seed,
+                                                            shuffle=True
+                                                            )
+        data['X_train'], data['X_valid'], data['y_train'], data['y_valid'] = X_train, X_valid, y_train, y_valid
+    
     return data
 
 
@@ -109,7 +101,6 @@ def basic_data_loader(args, data):
         Train/Valid split 비율로, 0일 경우에 대한 처리를 위해 사용합니다.
     data : dict
         basic_data_split 함수에서 반환된 데이터
-
     Returns
     -------
     data : dict
