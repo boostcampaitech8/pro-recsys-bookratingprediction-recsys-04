@@ -8,6 +8,7 @@ import torch.optim.lr_scheduler as scheduler_module
 from src.utils import Logger, Setting
 import src.data as data_module
 from src.train import train, test
+from src.train.catboost_trainer import train_catboost, test_catboost
 import src.models as model_module
 
 
@@ -41,7 +42,11 @@ def main(args, wandb=None):
     print(f'--------------- INIT {args.model} ---------------')
     # models > __init__.py 에 저장된 모델만 사용 가능
     # model = FM(args.model_args.FM, data).to('cuda')와 동일한 코드
-    model = getattr(model_module, args.model)(args.model_args[args.model], data).to(args.device)
+    if args.model == 'CatBoost':
+        # CatBoost는 전역 seed를 사용하므로 args도 함께 전달
+        model = getattr(model_module, args.model)(args.model_args[args.model], data, global_seed=args.seed).to(args.device)
+    else:
+        model = getattr(model_module, args.model)(args.model_args[args.model], data).to(args.device)
 
     # 만일 기존의 모델을 불러와서 학습을 시작하려면 resume을 true로 설정하고 resume_path에 모델을 지정하면 됨
     if args.train.resume:
@@ -51,16 +56,25 @@ def main(args, wandb=None):
     ######################## TRAIN
     if not args.predict:
         print(f'--------------- {args.model} TRAINING ---------------')
-        model = train(args, model, data, logger, setting)
+        if args.model == 'CatBoost':
+            model = train_catboost(args, model, data, logger, setting)
+        else:
+            model = train(args, model, data, logger, setting)
 
 
     ######################## INFERENCE
     if not args.predict:
         print(f'--------------- {args.model} PREDICT ---------------')
-        predicts = test(args, model, data, setting)
+        if args.model == 'CatBoost':
+            predicts = test_catboost(args, model, data, setting)
+        else:
+            predicts = test(args, model, data, setting)
     else:
         print(f'--------------- {args.model} PREDICT ---------------')
-        predicts = test(args, model, data, setting, args.checkpoint)
+        if args.model == 'CatBoost':
+            predicts = test_catboost(args, model, data, setting, args.checkpoint)
+        else:
+            predicts = test(args, model, data, setting, args.checkpoint)
 
 
     ######################## SAVE PREDICT
@@ -91,8 +105,8 @@ if __name__ == "__main__":
         help='학습을 생략할지 여부를 설정할 수 있습니다.')
     arg('--checkpoint', '-ckpt', '--ckpt', type=str, 
         help='학습을 생략할 때 사용할 모델을 설정할 수 있습니다. 단, 하이퍼파라미터 세팅을 모두 정확하게 입력해야 합니다.')
-    arg('--model', '-m', '--m', type=str, 
-        choices=['FM', 'FFM', 'DeepFM', 'NCF', 'WDN', 'DCN', 'Image_FM', 'Image_DeepFM', 'Text_FM', 'Text_DeepFM', 'ResNet_DeepFM', 'VAE'],
+    arg('--model', '-m', '--m', type=str,
+        choices=['FM', 'FFM', 'DeepFM', 'NCF', 'WDN', 'DCN', 'Image_FM', 'Image_DeepFM', 'Text_FM', 'Text_DeepFM', 'ResNet_DeepFM', 'CatBoost', 'VAE'],
         help='학습 및 예측할 모델을 선택할 수 있습니다.')
     arg('--seed', '-s', '--s', type=int,
         help='데이터분할 및 모델 초기화 시 사용할 시드를 설정할 수 있습니다.')
