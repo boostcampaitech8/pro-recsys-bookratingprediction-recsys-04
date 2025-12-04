@@ -3,13 +3,14 @@ from sklearn.model_selection import train_test_split
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 
+
 def basic_data_load(args):
     """
     Parameters
     ----------
     args.dataset.data_path : str
         데이터 경로를 설정할 수 있는 parser
-    
+
     Returns
     -------
     data : dict
@@ -17,37 +18,43 @@ def basic_data_load(args):
     """
 
     ######################## DATA LOAD
-    # users = pd.read_csv(args.dataset.data_path + 'users.csv')
-    # books = pd.read_csv(args.dataset.data_path + 'books.csv')
-    train_df = pd.read_csv(args.dataset.data_path + 'train_ratings.csv')
-    test_df = pd.read_csv(args.dataset.data_path + 'test_ratings.csv')
-    sub = pd.read_csv(args.dataset.data_path + 'sample_submission.csv')
+    train_df = pd.read_csv(args.dataset.data_path + "train_ratings.csv")
+    test_df = pd.read_csv(args.dataset.data_path + "test_ratings.csv")
+    sub = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
 
+    # 처리를 위해 잠시 합칩니다 (나중에 분리할 때 원본 보존을 위해 copy 사용 추천하지만, 여기선 흐름상 진행)
     all_df = pd.concat([train_df, test_df], axis=0)
-    
-    sparse_cols = ['user_id', 'isbn']
+
+    sparse_cols = ["user_id", "isbn"]
 
     # 라벨 인코딩하고 인덱스 정보를 저장
     label2idx, idx2label = {}, {}
     for col in sparse_cols:
-        all_df[col] = all_df[col].fillna('unknown')
+        # 1. 전체 데이터 기준으로 결측치 처리 및 유니크 라벨 추출
+        all_df[col] = all_df[col].fillna("unknown")
         unique_labels = all_df[col].astype("category").cat.categories
-        label2idx[col] = {label:idx for idx, label in enumerate(unique_labels)}
-        idx2label[col] = {idx:label for idx, label in enumerate(unique_labels)}
-        train_df[col] = train_df[col].astype("category").cat.codes
-        test_df[col] = test_df[col].astype("category").cat.codes
+
+        # 2. 사전 생성
+        label2idx[col] = {label: idx for idx, label in enumerate(unique_labels)}
+        idx2label[col] = {idx: label for idx, label in enumerate(unique_labels)}
+
+        # 3. [중요] 생성된 사전을 이용해 train/test 각각 매핑 (일관성 유지)
+        # 데이터프레임 원본에도 fillna를 해줘야 매핑 시 에러가 안 납니다.
+        train_df[col] = train_df[col].fillna("unknown").map(label2idx[col])
+        test_df[col] = test_df[col].fillna("unknown").map(label2idx[col])
 
     field_dims = [len(label2idx[col]) for col in sparse_cols]
 
     data = {
-            'train':train_df,
-            'test':test_df.drop(['rating'], axis=1),
-            'field_dims':field_dims,
-            'label2idx':label2idx,
-            'idx2label':idx2label,
-            'sub':sub,
-            }
-
+        "train": train_df,
+        "test": test_df.drop(
+            ["rating"], axis=1
+        ),  # test에는 rating이 없을 수 있으니 확인 필요
+        "field_dims": field_dims,
+        "label2idx": label2idx,
+        "idx2label": idx2label,
+        "sub": sub,
+    }
 
     return data
 
@@ -67,19 +74,24 @@ def basic_data_split(args, data):
         data 내의 학습 데이터를 학습/검증 데이터로 나누어 추가한 후 반환합니다.
     """
     if args.dataset.valid_ratio == 0:
-        data['X_train'] = data['train'].drop('rating', axis=1)
-        data['y_train'] = data['train']['rating']
+        data["X_train"] = data["train"].drop("rating", axis=1)
+        data["y_train"] = data["train"]["rating"]
 
     else:
         X_train, X_valid, y_train, y_valid = train_test_split(
-                                                            data['train'].drop(['rating'], axis=1),
-                                                            data['train']['rating'],
-                                                            test_size=args.dataset.valid_ratio,
-                                                            random_state=args.seed,
-                                                            shuffle=True
-                                                            )
-        data['X_train'], data['X_valid'], data['y_train'], data['y_valid'] = X_train, X_valid, y_train, y_valid
-    
+            data["train"].drop(["rating"], axis=1),
+            data["train"]["rating"],
+            test_size=args.dataset.valid_ratio,
+            random_state=args.seed,
+            shuffle=True,
+        )
+        data["X_train"], data["X_valid"], data["y_train"], data["y_valid"] = (
+            X_train,
+            X_valid,
+            y_train,
+            y_valid,
+        )
+
     return data
 
 
@@ -97,21 +109,54 @@ def basic_data_loader(args, data):
         Train/Valid split 비율로, 0일 경우에 대한 처리를 위해 사용합니다.
     data : dict
         basic_data_split 함수에서 반환된 데이터
-    
+
     Returns
     -------
     data : dict
         DataLoader가 추가된 데이터를 반환합니다.
     """
 
-    train_dataset = TensorDataset(torch.LongTensor(data['X_train'].values), torch.LongTensor(data['y_train'].values))
-    valid_dataset = TensorDataset(torch.LongTensor(data['X_valid'].values), torch.LongTensor(data['y_valid'].values)) if args.dataset.valid_ratio != 0 else None
-    test_dataset = TensorDataset(torch.LongTensor(data['test'].values))
+    train_dataset = TensorDataset(
+        torch.LongTensor(data["X_train"].values),
+        torch.LongTensor(data["y_train"].values),
+    )
+    valid_dataset = (
+        TensorDataset(
+            torch.LongTensor(data["X_valid"].values),
+            torch.LongTensor(data["y_valid"].values),
+        )
+        if args.dataset.valid_ratio != 0
+        else None
+    )
+    test_dataset = TensorDataset(torch.LongTensor(data["test"].values))
 
-    train_dataloader = DataLoader(train_dataset, batch_size=args.dataloader.batch_size, shuffle=args.dataloader.shuffle, num_workers=args.dataloader.num_workers)
-    valid_dataloader = DataLoader(valid_dataset, batch_size=args.dataloader.batch_size, shuffle=False, num_workers=args.dataloader.num_workers) if args.dataset.valid_ratio != 0 else None
-    test_dataloader = DataLoader(test_dataset, batch_size=args.dataloader.batch_size, shuffle=False, num_workers=args.dataloader.num_workers)
+    train_dataloader = DataLoader(
+        train_dataset,
+        batch_size=args.dataloader.batch_size,
+        shuffle=args.dataloader.shuffle,
+        num_workers=args.dataloader.num_workers,
+    )
+    valid_dataloader = (
+        DataLoader(
+            valid_dataset,
+            batch_size=args.dataloader.batch_size,
+            shuffle=False,
+            num_workers=args.dataloader.num_workers,
+        )
+        if args.dataset.valid_ratio != 0
+        else None
+    )
+    test_dataloader = DataLoader(
+        test_dataset,
+        batch_size=args.dataloader.batch_size,
+        shuffle=False,
+        num_workers=args.dataloader.num_workers,
+    )
 
-    data['train_dataloader'], data['valid_dataloader'], data['test_dataloader'] = train_dataloader, valid_dataloader, test_dataloader
+    data["train_dataloader"], data["valid_dataloader"], data["test_dataloader"] = (
+        train_dataloader,
+        valid_dataloader,
+        test_dataloader,
+    )
 
     return data
