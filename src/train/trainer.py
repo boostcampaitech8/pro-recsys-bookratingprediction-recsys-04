@@ -212,20 +212,21 @@ def test(args, model, dataloader, setting, checkpoint=None):
         model.load_state_dict(torch.load(model_path, weights_only=True))
 
     model.eval()
-    for data in dataloader["test_dataloader"]:
-        if args.model_args[args.model].datatype == "image":
-            x = [
-                data["user_book_vector"].to(args.device),
-                data["img_vector"].to(args.device),
-            ]
-        elif args.model_args[args.model].datatype == "text":
-            x = [
-                data["user_book_vector"].to(args.device),
-                data["user_summary_vector"].to(args.device),
-                data["book_summary_vector"].to(args.device),
-            ]
-        else:
-            x = data[0].to(args.device)
-        y_hat = model(x)
-        predicts.extend(y_hat.tolist())
-    return predicts
+    with torch.no_grad():  # ⬅️ 요거 추가!
+        for data in dataloader["test_dataloader"]:
+            if args.model_args[args.model].datatype == "image":
+                x = [
+                    data["user_book_vector"].to(args.device),
+                    data["img_vector"].to(args.device),
+                ]
+            elif args.model_args[args.model].datatype == "text":
+                x = [
+                    data["user_book_vector"].to(args.device),
+                    data["user_summary_vector"].to(args.device),
+                    data["book_summary_vector"].to(args.device),
+                ]
+            else:
+                x = data[0].to(args.device)
+
+            y_hat = model(x)
+            predicts.extend(y_hat.tolist())
