@@ -41,8 +41,15 @@ def train(args, model, dataloader, logger, setting):
     else:
         lr_scheduler = None
 
-    # [추가 1] 베스트 모델의 정보를 담을 변수 초기화 (for문 시작 전)
+    # [수정] Best Model 정보 저장용 변수
     best_summary = "Best model logic was not triggered."
+
+    # [추가] Early Stopping 변수 초기화
+    # config에 설정이 없으면 기본값 10으로 설정 (안전장치)
+    early_stopping_patience = getattr(args.train, "early_stopping_patience", 10)
+    patience_check = 0
+
+    print(f"[*] Early Stopping Settings: Patience = {early_stopping_patience}")
 
     for epoch in range(args.train.epochs):
         model.train()
@@ -65,6 +72,7 @@ def train(args, model, dataloader, logger, setting):
                 ], data["rating"].to(args.device)
             else:
                 x, y = data[0].to(args.device), data[1].to(args.device)
+
             y_hat = model(x)
             loss = loss_fn(y_hat, y.float())
             optimizer.zero_grad()
@@ -72,15 +80,19 @@ def train(args, model, dataloader, logger, setting):
             optimizer.step()
             total_loss += loss.item()
 
+        # StepLR 등 일반 스케줄러는 여기서 step (Plateau 제외)
         if args.lr_scheduler.use and args.lr_scheduler.type != "ReduceLROnPlateau":
             lr_scheduler.step()
 
         msg = ""
         train_loss = total_loss / train_len
         msg += f"\tTrain Loss ({METRIC_NAMES[args.loss]}): {train_loss:.3f}"
+
         if args.dataset.valid_ratio != 0:  # valid 데이터가 존재할 경우
             valid_loss = valid(args, model, dataloader["valid_dataloader"], loss_fn)
             msg += f"\n\tValid Loss ({METRIC_NAMES[args.loss]}): {valid_loss:.3f}"
+
+            # ReduceLROnPlateau 스케줄러는 여기서 valid_loss를 보고 step
             if args.lr_scheduler.use and args.lr_scheduler.type == "ReduceLROnPlateau":
                 lr_scheduler.step(valid_loss)
 
@@ -93,6 +105,7 @@ def train(args, model, dataloader, logger, setting):
                 valid_metrics[f"Valid {METRIC_NAMES[metric]}"] = valid_metric
             for metric, value in valid_metrics.items():
                 msg += f" | {metric}: {value:.3f}"
+
             print(msg)
             logger.log(
                 epoch=epoch + 1,
@@ -114,18 +127,30 @@ def train(args, model, dataloader, logger, setting):
             if args.wandb:
                 wandb.log({f"Train {METRIC_NAMES[args.loss]}": train_loss})
 
+        # [수정] 모델 저장 및 Early Stopping 로직 적용
         if args.train.save_best_model:
             best_loss = valid_loss if args.dataset.valid_ratio != 0 else train_loss
+
+            # 성능 갱신 성공 (Best Model)
             if minimum_loss is None or minimum_loss > best_loss:
                 minimum_loss = best_loss
+                patience_check = 0  # 카운트 초기화
+
                 os.makedirs(args.train.ckpt_dir, exist_ok=True)
                 torch.save(
                     model.state_dict(),
                     f"{args.train.ckpt_dir}/{setting.save_time}_{args.model}_best.pt",
                 )
-                # [추가 2] Best 성능 갱신될 때, 그 당시의 msg를 저장해둠
-                # msg는 위에서 만들어진 로그 문자열임 (Train Loss, Valid Loss 등 포함)
                 best_summary = f"[Epoch {epoch+1:02d}] {msg.strip()}"
+
+            # 성능 갱신 실패 (Early Stopping 카운트 증가)
+            else:
+                patience_check += 1
+                if patience_check >= early_stopping_patience:
+                    print(
+                        f"\n[Early Stopping] Epoch {epoch+1}에서 학습을 조기 종료합니다. (Validation Loss가 {early_stopping_patience}회 동안 개선되지 않음)"
+                    )
+                    break
         else:
             os.makedirs(args.train.ckpt_dir, exist_ok=True)
             torch.save(
@@ -133,7 +158,6 @@ def train(args, model, dataloader, logger, setting):
                 f"{args.train.ckpt_dir}/{setting.save_time}_{args.model}_e{epoch:02}.pt",
             )
 
-    # [추가 3] 학습 루프(for epoch)가 완전히 끝난 후, 저장해둔 Best 정보 출력
     print(f"\n{'='*20} TRAINING SUMMARY {'='*20}")
     print("🏆 Best Model Performance:")
     print(best_summary)
