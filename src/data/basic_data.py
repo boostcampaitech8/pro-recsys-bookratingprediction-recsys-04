@@ -9,7 +9,6 @@ def basic_data_load(args):
     ----------
     args.dataset.data_path : str
         데이터 경로를 설정할 수 있는 parser
-    
     Returns
     -------
     data : dict
@@ -17,13 +16,14 @@ def basic_data_load(args):
     """
 
     ######################## DATA LOAD
-    train_df = pd.read_csv(args.dataset.data_path + 'train_ratings.csv')
-    test_df = pd.read_csv(args.dataset.data_path + 'test_ratings.csv')
-    sub = pd.read_csv(args.dataset.data_path + 'sample_submission.csv')
+    train_df = pd.read_csv(args.dataset.data_path + "train_ratings.csv")
+    test_df = pd.read_csv(args.dataset.data_path + "test_ratings.csv")
+    sub = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
 
+    # 처리를 위해 잠시 합칩니다 (나중에 분리할 때 원본 보존을 위해 copy 사용 추천하지만, 여기선 흐름상 진행)
     all_df = pd.concat([train_df, test_df], axis=0)
-    
-    sparse_cols = ['user_id', 'isbn']
+
+    sparse_cols = ["user_id", "isbn"]
 
     # 라벨 인코딩하고 인덱스 정보를 저장
     label2idx, idx2label = {}, {}
@@ -101,21 +101,53 @@ def basic_data_loader(args, data):
         Train/Valid split 비율로, 0일 경우에 대한 처리를 위해 사용합니다.
     data : dict
         basic_data_split 함수에서 반환된 데이터
-    
     Returns
     -------
     data : dict
         DataLoader가 추가된 데이터를 반환합니다.
     """
 
-    train_dataset = TensorDataset(torch.LongTensor(data['X_train'].values), torch.LongTensor(data['y_train'].values))
-    valid_dataset = TensorDataset(torch.LongTensor(data['X_valid'].values), torch.LongTensor(data['y_valid'].values)) if args.dataset.valid_ratio != 0 else None
-    test_dataset = TensorDataset(torch.LongTensor(data['test'].values))
+    train_dataset = TensorDataset(
+        torch.LongTensor(data["X_train"].values),
+        torch.LongTensor(data["y_train"].values),
+    )
+    valid_dataset = (
+        TensorDataset(
+            torch.LongTensor(data["X_valid"].values),
+            torch.LongTensor(data["y_valid"].values),
+        )
+        if args.dataset.valid_ratio != 0
+        else None
+    )
+    test_dataset = TensorDataset(torch.LongTensor(data["test"].values))
 
-    train_dataloader = DataLoader(train_dataset, batch_size=args.dataloader.batch_size, shuffle=args.dataloader.shuffle, num_workers=args.dataloader.num_workers)
-    valid_dataloader = DataLoader(valid_dataset, batch_size=args.dataloader.batch_size, shuffle=False, num_workers=args.dataloader.num_workers) if args.dataset.valid_ratio != 0 else None
-    test_dataloader = DataLoader(test_dataset, batch_size=args.dataloader.batch_size, shuffle=False, num_workers=args.dataloader.num_workers)
+    train_dataloader = DataLoader(
+        train_dataset,
+        batch_size=args.dataloader.batch_size,
+        shuffle=args.dataloader.shuffle,
+        num_workers=args.dataloader.num_workers,
+    )
+    valid_dataloader = (
+        DataLoader(
+            valid_dataset,
+            batch_size=args.dataloader.batch_size,
+            shuffle=False,
+            num_workers=args.dataloader.num_workers,
+        )
+        if args.dataset.valid_ratio != 0
+        else None
+    )
+    test_dataloader = DataLoader(
+        test_dataset,
+        batch_size=args.dataloader.batch_size,
+        shuffle=False,
+        num_workers=args.dataloader.num_workers,
+    )
 
-    data['train_dataloader'], data['valid_dataloader'], data['test_dataloader'] = train_dataloader, valid_dataloader, test_dataloader
+    data["train_dataloader"], data["valid_dataloader"], data["test_dataloader"] = (
+        train_dataloader,
+        valid_dataloader,
+        test_dataloader,
+    )
 
     return data

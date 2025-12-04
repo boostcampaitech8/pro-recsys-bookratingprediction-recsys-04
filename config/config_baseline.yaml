@@ -39,7 +39,7 @@ model_args:     # model에 해당하는 파라미터만 실질적으로 사용�
         batchnorm: True    # MLP_Base에서 배치 정규화 사용 여부
         dropout: 0.2        # MLP_Base에서 드롭아웃 비율
     NCF:
-        datatype: basic   # basic, context, image, text 중 basic, context 가능
+        datatype: context   # basic, context, image, text 중 basic, context 가능
         embed_dim: 16       # sparse 벡터를 임베딩할 차원
         mlp_dims: [16, 32]  # MLP_Base의 히든 레이어 차원
         batchnorm: True    # MLP_Base에서 배치 정규화 사용 여부
@@ -111,13 +111,13 @@ dataloader:
     num_workers: 0      # 멀티프로세서 수. 0: 메인프로세서만 사용
 
 optimizer:
-    type: AdamW         # 사용가능한 optimizer: torch.optim.Optimizer 클래스 (https://pytorch.org/docs/stable/optim.html#algorithms)
-    args:               # 사용하고자 하는 클래스의 파라미터를 참고하여 추가해주시면 되며, 관계가 없는 파라미터는 무시됩니다.
-        lr: 5e-4            # 예) 모든 옵티마이저에서 사용되는 학습률
+    type: Adam      # 사용가능한 optimizer: torch.optim.Optimizer 클래스 (https://pytorch.org/docs/stable/optim.html#algorithms)
+    args:           # 사용하고자 하는 클래스의 파라미터를 참고하여 추가해주시면 되며, 관계가 없는 파라미터는 무시됩니다.
+        lr: 5e-3            # 예) 모든 옵티마이저에서 사용되는 학습률
         weight_decay: 1e-4  # 예) Adam 등 / L2 정규화 가중치
         amsgrad: False      # 예) Adam 등 / amsgrad 사용 여부
 
-loss: VAELoss          # 직접 정의한 loss 클래스 또는 torch.nn.Module 클래스 (https://pytorch.org/docs/stable/nn.html#loss-functions)
+loss: RMSELoss          # 직접 정의한 loss 클래스 또는 torch.nn.Module 클래스 (https://pytorch.org/docs/stable/nn.html#loss-functions)
 
 lr_scheduler:
     use: False                  # True: 사용 / False: 사용하지 않음 (단, valid_ratio가 0일 경우 validation set이 없어 사용 불가)
@@ -128,7 +128,7 @@ lr_scheduler:
         step_size: 10           # 예) StepLR / 학습률 감소 주기 (필수)
         gamma: 0.1              # 예) StepLR 등 / 학습률 감소 비율
 
-metrics: [ RMSELoss, VAELoss ]  # 평가 지표. 직접 정의한 loss 클래스 또는 torch.nn.Module 클래스 (https://pytorch.org/docs/stable/nn.html#loss-functions)
+metrics: [ MSELoss, MAELoss, RMSELoss ]  # 평가 지표. 직접 정의한 loss 클래스 또는 torch.nn.Module 클래스 (https://pytorch.org/docs/stable/nn.html#loss-functions)
 
 train:
     epochs: 20                          # 학습 에폭 수
@@ -136,5 +136,6 @@ train:
     ckpt_dir: saved/checkpoint    # 모델 저장 경로
     submit_dir: saved/submit            # 예측 저장 경로
     save_best_model: True               # True: val_loss가 최소인 모델 저장 / False: 모든 모델 저장
+    early_stopping_patience: 10  
     resume: False                               # 이어서 학습할 경우 True
     resume_path: saved/checkpoint/FM_best.pt    # 이어서 학습할 모델 경로

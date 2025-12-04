@@ -3,5 +3,9 @@
 .github/
 ._*
 /saved
-__pycache__/
 wandb/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
