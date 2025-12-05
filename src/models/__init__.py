@@ -1,7 +1,7 @@
 # from .FM import FactorizationMachine as FM
 # from .FFM import FieldAwareFactorizationMachine as FFM
 # from .DeepFM import DeepFM
-from .NCF import NeuralCollaborativeFiltering as NCF
+# from .NCF import NeuralCollaborativeFiltering as NCF
 from .VAE import VAE
 # from .WDN import WideAndDeep as WDN
 # from .DCN import DeepCrossNetwork as DCN
