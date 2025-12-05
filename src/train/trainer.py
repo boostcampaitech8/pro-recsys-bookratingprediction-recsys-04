@@ -11,8 +11,8 @@ METRIC_NAMES = {
     "MSELoss": "MSE",
     "MAELoss": "MAE",
     "VAELoss": "VAE",
+    "SparseRMSELoss": "RMSE",   # 이 RMSE는 VAE에만 사용하세요!
 }
-
 
 def train(args, model, dataloader, logger, setting):
     if args.wandb:
