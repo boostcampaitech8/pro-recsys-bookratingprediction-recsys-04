@@ -140,6 +140,13 @@ if __name__ == "__main__":
         if config_args[key] is not None:
             config_yaml[key] = config_args[key]
     
+    # VAE 모델 선택 시, 명시적으로 --loss/--metrics가 주어지지 않았다면 자동 설정
+    if config_yaml.model == 'VAE':
+        if args.loss is None:
+            config_yaml.loss = 'VAELoss'
+        if args.metrics is None:
+            config_yaml.metrics = ['SparseRMSELoss']
+    
     # 사용되지 않는 정보 삭제 (학습 시에만)
     if config_yaml.predict == False:
         del config_yaml.checkpoint
