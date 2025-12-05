@@ -1,7 +1,7 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
 from scipy.sparse import csr_matrix
 import numpy as np
 
@@ -146,9 +146,16 @@ def sparse_data_loader(args, data):
     valid_dataset = SparseDataset(data['train_csr'], data['valid_csr']) if args.dataset.valid_ratio != 0 else None
     test_dataset = SparseDataset(data['train_csr'], data['test_csr'])
 
+    # Validation 시간을 줄이기 위해서 랜덤 샘플링 10%만 진행
+    indices = list(range(data['num_users']))
+    np.random.shuffle(indices)
+    valid_indices = indices[:int(data['num_users'] * 0.1)]
+
+    valid_sampler = SubsetRandomSampler(valid_indices)
+
     train_dataloader = DataLoader(train_dataset, batch_size=args.dataloader.batch_size, shuffle=args.dataloader.shuffle, num_workers=args.dataloader.num_workers)
-    valid_dataloader = DataLoader(valid_dataset, batch_size=args.dataloader.batch_size * 4, shuffle=False, num_workers=args.dataloader.num_workers) if args.dataset.valid_ratio != 0 else None
-    test_dataloader = DataLoader(test_dataset, batch_size=args.dataloader.batch_size * 4, shuffle=False, num_workers=args.dataloader.num_workers)
+    valid_dataloader = DataLoader(valid_dataset, batch_size=args.dataloader.batch_size, sampler=valid_sampler, num_workers=args.dataloader.num_workers) if args.dataset.valid_ratio != 0 else None
+    test_dataloader = DataLoader(test_dataset, batch_size=args.dataloader.batch_size, shuffle=False, num_workers=args.dataloader.num_workers)
 
     data['train_dataloader'], data['valid_dataloader'], data['test_dataloader'] = train_dataloader, valid_dataloader, test_dataloader
 
