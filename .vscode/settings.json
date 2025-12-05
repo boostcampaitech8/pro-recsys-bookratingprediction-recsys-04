@@ -1,0 +1,8 @@
+{
+    "python.defaultInterpreterPath": "/data/ephemeral/home/.venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.venvPath": "/data/ephemeral/home",
+    "python.venvFolders": [
+        ".venv"
+    ]
+}
