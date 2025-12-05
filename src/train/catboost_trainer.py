@@ -25,7 +25,7 @@ def train_catboost(args, model, data, logger, setting):
     model : CatBoost
         학습된 모델
     """
-    print(f'--------------- CatBoost TRAINING ---------------')
+    print(f"--------------- {args.model} TRAINING ---------------")
 
     # DataLoader에서 데이터 추출
     X_train_list, y_train_list = [], []
@@ -57,14 +57,15 @@ def train_catboost(args, model, data, logger, setting):
         eval_set = (X_valid, y_valid)
 
     # CatBoost 학습
-    print('Training CatBoost model...')
+    print(f'Training {args.model} model...')
     model.fit(X_train, y_train, eval_set=eval_set)
 
     # 모델 저장
     if args.train.save_best_model:
         import os
         os.makedirs(args.train.ckpt_dir, exist_ok=True)
-        model_path = os.path.join(args.train.ckpt_dir, f'{setting.save_time}_{args.model}_best.cbm')
+        ext = '.cbm' if args.model == 'CatBoost' else '.json'
+        model_path = os.path.join(args.train.ckpt_dir, f"{setting.save_time}_{args.model}_best{ext}")
         model.model.save_model(model_path)
         print(f'Model saved to {model_path}')
 
