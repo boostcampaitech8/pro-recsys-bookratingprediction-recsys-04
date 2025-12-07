@@ -8,6 +8,9 @@ from .basic_data import basic_data_split
 
 def str2list(x: str) -> list:
     """문자열을 리스트로 변환하는 함수"""
+    if x[0] != '[':
+        return x.split(", ")
+        
     return x[1:-1].split(", ")
 
 
@@ -136,7 +139,7 @@ def context_data_load(args):
 
     ######################## DATA LOAD
     users = pd.read_csv(args.dataset.data_path + "users.csv")
-    books = pd.read_csv(args.dataset.data_path + "books.csv")
+    books = pd.read_csv(args.dataset.data_path + "books_with_categories.csv")
     train = pd.read_csv(args.dataset.data_path + "train_ratings.csv")
     test = pd.read_csv(args.dataset.data_path + "test_ratings.csv")
     sub = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
