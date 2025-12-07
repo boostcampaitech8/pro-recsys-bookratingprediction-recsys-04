@@ -98,6 +98,8 @@ model_args:     # model에 해당하는 파라미터만 실질적으로 사용�
         dropout: 0.2        # MLP_Base에서 드롭아웃 비율
     CatBoost:
         datatype: context       # basic, context 가능 (CatBoost는 범주형 변수에 특화)
+        # vector_create: False
+        # pretrained_model: 'sentence-transformers/all-mpnet-base-v2'   # 텍스트 임베딩에 사용할 사전학습 모델
         iterations: 5000        # 부스팅 반복 횟수 (트리 개수)
         learning_rate: 0.03     # 학습률
         depth: 6                # 트리 깊이
@@ -156,6 +158,6 @@ train:
     ckpt_dir: saved/checkpoint    # 모델 저장 경로
     submit_dir: saved/submit            # 예측 저장 경로
     save_best_model: True               # True: val_loss가 최소인 모델 저장 / False: 모든 모델 저장
-    early_stopping_patience: 5          # n회 동안 val score가 개선되지 않을 시 early stop
+    # early_stopping_patience: 5          # n회 동안 val score가 개선되지 않을 시 early stop
     resume: False                               # 이어서 학습할 경우 True
     resume_path: saved/checkpoint/FM_best.pt    # 이어서 학습할 모델 경로
