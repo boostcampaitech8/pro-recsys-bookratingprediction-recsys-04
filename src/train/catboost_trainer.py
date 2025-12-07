@@ -64,9 +64,19 @@ def train_catboost(args, model, data, logger, setting):
     if args.train.save_best_model:
         import os
         os.makedirs(args.train.ckpt_dir, exist_ok=True)
-        ext = '.cbm' if args.model == 'CatBoost' else '.json'
-        model_path = os.path.join(args.train.ckpt_dir, f"{setting.save_time}_{args.model}_best{ext}")
-        model.model.save_model(model_path)
+        if args.model == 'CatBoost':
+            ext = '.cbm'
+            model_path = os.path.join(args.train.ckpt_dir, f"{setting.save_time}_{args.model}_best{ext}")
+            model.model.save_model(model_path)
+        elif args.model == 'XGBoost':
+            ext = '.json'
+            model_path = os.path.join(args.train.ckpt_dir, f"{setting.save_time}_{args.model}_best{ext}")
+            model.model.save_model(model_path)
+        else:
+            # default behavior
+            ext = '.pt'
+            model_path = os.path.join(args.train.ckpt_dir, f"{setting.save_time}_{args.model}_best{ext}")
+            torch.save(model.state_dict(), model_path)
         print(f'Model saved to {model_path}')
 
     return model
