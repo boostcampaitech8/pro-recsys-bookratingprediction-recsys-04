@@ -60,7 +60,7 @@ if __name__ == "__main__":
     (default="weighted")
 
     --ensemble_weight ensemble_weight [ensemble_weight ...]
-    optional: weighted 앙상블 전략에서만 사용되는 인자입니다.
+    optional: weighted 앙상블 전략에서만 사용되는 인자입니다.s
     전달받은 결과값의 가중치를 조정할 수 있습니다.
     가중치를 쉼표(,)로 구분하여 모두 입력해 주세요.
     이 때, 합산 1이 되지 않는 경우 작동하지 않습니다.
@@ -106,7 +106,7 @@ if __name__ == "__main__":
     arg(
         "--result_path",
         type=str,
-        default="saved/submit/",
+        default="../saved/submit/",
         help='optional: 앙상블할 파일이 존재하는 경로를 전달합니다. (default:"saved/submit/")',
     )
     args = parser.parse_args()

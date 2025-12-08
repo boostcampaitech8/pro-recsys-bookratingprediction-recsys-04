@@ -9,8 +9,8 @@ from src.utils import Logger, Setting
 import src.data as data_module
 from src.train import train, test
 import src.models as model_module
-
-# 메인
+import numpy as np
+from sklearn.model_selection import KFold
 
 
 def main(args, wandb=None):
@@ -18,75 +18,182 @@ def main(args, wandb=None):
 
     ######################## LOAD DATA
     datatype = args.model_args[args.model].datatype
-    data_load_fn = getattr(
-        data_module, f"{datatype}_data_load"
-    )  # e.g. basic_data_load()
-    data_split_fn = getattr(
-        data_module, f"{datatype}_data_split"
-    )  # e.g. basic_data_split()
-    data_loader_fn = getattr(
-        data_module, f"{datatype}_data_loader"
-    )  # e.g. basic_data_loader()
+    data_load_fn = getattr(data_module, f"{datatype}_data_load")
+    data_loader_fn = getattr(data_module, f"{datatype}_data_loader")
+    data_split_fn = getattr(data_module, f"{datatype}_data_split")
 
     print(f"--------------- {args.model} Load Data ---------------")
-    data = data_load_fn(args)
+    # 데이터 로드는 공통
+    original_data = data_load_fn(args)
 
-    print(f"--------------- {args.model} Train/Valid Split ---------------")
-    data = data_split_fn(args, data)
-    data = data_loader_fn(args, data)
+    ######################## MODE SELECTION
+    # 🔥 [수정] args 객체에 'kfold' 키가 없을 경우를 대비하여 None을 기본값으로 사용
+    kfold_splits = getattr(args, "kfold", None)
 
-    ####################### Setting for Log
-    setting = Setting()
+    # if args.kfold is not None and args.kfold > 1:  # ⬅️ 이 부분을 아래처럼 바꿉니다.
+    if kfold_splits is not None and kfold_splits > 1:
 
-    if args.predict == False:
-        log_path = setting.get_log_path(args)
-        logger = Logger(args, log_path)
-        logger.save_args()
+        # ==========================================
+        # [MODE 1] K-Fold Ensemble Training Strategy
+        # ==========================================
+        n_splits = kfold_splits
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=args.seed)
+        fold_predicts_list = []
 
-    ######################## Model
-    print(f"--------------- INIT {args.model} ---------------")
-    # models > __init__.py 에 저장된 모델만 사용 가능
-    # model = FM(args.model_args.FM, data).to('cuda')와 동일한 코드
-    model = getattr(model_module, args.model)(args.model_args[args.model], data).to(
-        args.device
-    )
+        print(f">>> K-FOLD MODE ENABLED: {n_splits} Folds <<<")
 
-    # 만일 기존의 모델을 불러와서 학습을 시작하려면 resume을 true로 설정하고 resume_path에 모델을 지정하면 됨
-    if args.train.resume:
-        model.load_state_dict(torch.load(args.train.resume_path, weights_only=True))
+        # 학습 모드일 때만 K-Fold Loop 진행
+        if not args.predict:
+            train_df = original_data[
+                "train"
+            ]  # 데이터 구조 가정: {'train': df, 'test': df}
 
-    ######################## TRAIN
-    if not args.predict:
-        print(f"--------------- {args.model} TRAINING ---------------")
-        model = train(args, model, data, logger, setting)
+            for fold_idx, (train_idx, valid_idx) in enumerate(kf.split(train_df)):
+                print(
+                    f"\n\n=============== FOLD {fold_idx+1}/{n_splits} ==============="
+                )
 
-    ######################## INFERENCE
-    if not args.predict:
-        print(f"--------------- {args.model} PREDICT ---------------")
-        predicts = test(args, model, data, setting)
+                # 1. Fold Split
+                fold_train_data = train_df.iloc[train_idx]
+                fold_valid_data = train_df.iloc[valid_idx]
+
+                # 2. 메타데이터 포함하여 딕셔너리 구성 (original_data를 복사해서 시작)
+                target = "rating"
+
+                # 🔥 [핵심 수정] original_data의 모든 메타데이터(field_dims, field_names 등)를 복사해서 시작
+                input_data = original_data.copy()
+
+                # 3. K-Fold로 나눈 데이터로 train/valid 키를 덮어쓰거나 추가 (X, y 분리)
+                input_data["X_train"] = fold_train_data.drop(columns=[target])
+                input_data["y_train"] = fold_train_data[target]
+                input_data["X_valid"] = fold_valid_data.drop(columns=[target])
+                input_data["y_valid"] = fold_valid_data[target]
+
+                # 'test'와 'field_dims', 'field_names' 등은 이미 original_data.copy()에 포함됨
+
+                # 4. DataLoader 생성
+                # current_data에는 이제 DataLoader 객체들이 담겨 나옴
+                current_data = data_loader_fn(args, input_data)
+
+                # 5. [안전장치] 모델 초기화에 필요한 메타데이터가 data_loader_fn을 거치며 사라졌을 경우 다시 복구
+                # (NCF, DeepFM 계열 모델은 field_dims와 field_names를 필요로 함)
+                for key in original_data:
+                    # 'train' DataFrame 자체는 필요 없으므로 건너뜀
+                    if key not in current_data and key not in ["train"]:
+                        current_data[key] = original_data[key]
+
+                # 6. Logger Setup
+                setting = Setting()
+                log_path = setting.get_log_path(args)
+                logger = Logger(args, log_path)
+                logger.save_args()
+
+                # 7. Model Init
+                print(
+                    f"--------------- INIT {args.model} (Fold {fold_idx+1}) ---------------"
+                )
+                model = getattr(model_module, args.model)(
+                    args.model_args[args.model], current_data
+                ).to(args.device)
+
+                if args.train.resume:
+                    model.load_state_dict(
+                        torch.load(args.train.resume_path, weights_only=True)
+                    )
+
+                # 8. Train
+                print(
+                    f"--------------- {args.model} TRAINING (Fold {fold_idx+1}) ---------------"
+                )
+                model = train(args, model, current_data, logger, setting)
+
+                # 9. Predict (Inference)
+                print(
+                    f"--------------- {args.model} PREDICT (Fold {fold_idx+1}) ---------------"
+                )
+                predicts = test(args, model, current_data, setting)
+                fold_predicts_list.append(predicts)
+
+            # Soft Voting
+            print(
+                f"--------------- Soft Voting Ensemble ({n_splits} Folds) ---------------"
+            )
+            avg_predicts = np.mean(fold_predicts_list, axis=0)
+
+            # Save
+            print(f"--------------- SAVE {args.model} ENSEMBLE PREDICT ---------------")
+            submission = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
+            submission["rating"] = avg_predicts
+
+            filename = setting.get_submit_filename(args)
+            filename = filename.replace(".csv", f"_kfold_{n_splits}.csv")
+            print(f"Save Predict: {filename}")
+            submission.to_csv(filename, index=False)
+
+        else:
+            # 예측 모드인데 K-Fold를 킨 경우 (보통 5개 모델 로드해야 해서 복잡함 -> 경고 후 단일 실행 추천)
+            print(
+                "!!! Warning: Prediction-only mode with K-Fold is not fully supported in this script version."
+            )
+            print("!!! Please run without --kfold for single model inference.")
+
     else:
-        print(f"--------------- {args.model} PREDICT ---------------")
-        predicts = test(args, model, data, setting, args.checkpoint)
+        # ==========================================
+        # [MODE 2] Original Single Run Strategy
+        # ==========================================
+        print(
+            f"--------------- {args.model} Train/Valid Split (Original) ---------------"
+        )
+        data = data_split_fn(args, original_data)
+        data = data_loader_fn(args, data)
 
-    ######################## SAVE PREDICT
-    print(f"--------------- SAVE {args.model} PREDICT ---------------")
-    submission = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
-    submission["rating"] = predicts
+        ####################### Setting for Log
+        setting = Setting()
+        if args.predict == False:
+            log_path = setting.get_log_path(args)
+            logger = Logger(args, log_path)
+            logger.save_args()
 
-    filename = setting.get_submit_filename(args)
-    print(f"Save Predict: {filename}")
-    submission.to_csv(filename, index=False)
+        ######################## Model
+        print(f"--------------- INIT {args.model} ---------------")
+        model = getattr(model_module, args.model)(args.model_args[args.model], data).to(
+            args.device
+        )
+
+        if args.train.resume:
+            model.load_state_dict(torch.load(args.train.resume_path, weights_only=True))
+
+        ######################## TRAIN
+        if not args.predict:
+            print(f"--------------- {args.model} TRAINING ---------------")
+            model = train(args, model, data, logger, setting)
+
+        ######################## INFERENCE
+        if not args.predict:
+            print(f"--------------- {args.model} PREDICT ---------------")
+            predicts = test(args, model, data, setting)
+        else:
+            print(f"--------------- {args.model} PREDICT ---------------")
+            predicts = test(args, model, data, setting, args.checkpoint)
+
+        ######################## SAVE PREDICT
+        print(f"--------------- SAVE {args.model} PREDICT ---------------")
+        submission = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
+        submission["rating"] = predicts
+
+        filename = setting.get_submit_filename(args)
+        print(f"Save Predict: {filename}")
+        submission.to_csv(filename, index=False)
 
 
 if __name__ == "__main__":
 
     ######################## BASIC ENVIRONMENT SETUP
     parser = argparse.ArgumentParser(description="parser")
-
     arg = parser.add_argument
     str2dict = lambda x: {k: int(v) for k, v in (i.split(":") for i in x.split(","))}
 
-    # add basic arguments (no default value)
+    # add basic arguments
     arg(
         "--config",
         "-c",
@@ -95,6 +202,16 @@ if __name__ == "__main__":
         help="Configuration 파일을 설정합니다.",
         required=True,
     )
+
+    # [NEW] K-Fold Argument
+    arg(
+        "--kfold",
+        "-k",
+        type=int,
+        default=None,
+        help="K-Fold 학습을 수행하려면 fold 개수를 입력하세요 (예: 5). 입력하지 않으면 일반 학습을 진행합니다.",
+    )
+
     arg(
         "--predict",
         "-p",
@@ -108,7 +225,7 @@ if __name__ == "__main__":
         "-ckpt",
         "--ckpt",
         type=str,
-        help="학습을 생략할 때 사용할 모델을 설정할 수 있습니다. 단, 하이퍼파라미터 세팅을 모두 정확하게 입력해야 합니다.",
+        help="학습을 생략할 때 사용할 모델을 설정할 수 있습니다.",
     )
     arg(
         "--model",
@@ -183,22 +300,19 @@ if __name__ == "__main__":
     config_args = OmegaConf.create(vars(args))
     config_yaml = OmegaConf.load(args.config) if args.config else OmegaConf.create()
 
-    # args에 있는 값이 config_yaml에 있는 값보다 우선함. (단, None이 아닌 값일 경우)
+    # args 우선 적용
     for key in config_args.keys():
         if config_args[key] is not None:
             config_yaml[key] = config_args[key]
 
-    # 사용되지 않는 정보 삭제 (학습 시에만)
+    # 사용되지 않는 정보 삭제
     if config_yaml.predict == False:
         del config_yaml.checkpoint
-
         if config_yaml.wandb == False:
             del config_yaml.wandb_project, config_yaml.run_name
-
         config_yaml.model_args = OmegaConf.create(
             {config_yaml.model: config_yaml.model_args[config_yaml.model]}
         )
-
         config_yaml.optimizer.args = {
             k: v
             for k, v in config_yaml.optimizer.args.items()
@@ -207,7 +321,6 @@ if __name__ == "__main__":
                 optimizer_module, config_yaml.optimizer.type
             ).__init__.__code__.co_varnames
         }
-
         if config_yaml.lr_scheduler.use == False:
             del config_yaml.lr_scheduler.type, config_yaml.lr_scheduler.args
         else:
@@ -219,19 +332,16 @@ if __name__ == "__main__":
                     scheduler_module, config_yaml.lr_scheduler.type
                 ).__init__.__code__.co_varnames
             }
-
         if config_yaml.train.resume == False:
             del config_yaml.train.resume_path
 
-    # Configuration 콘솔에 출력
+    # Configuration 출력
     print(OmegaConf.to_yaml(config_yaml))
 
     ######################## W&B
     if args.wandb:
         import wandb
 
-        # wandb.require("core")
-        # https://docs.wandb.ai/ref/python/init 참고
         wandb.init(
             project=config_yaml.wandb_project,
             config=OmegaConf.to_container(config_yaml, resolve=True),
@@ -241,10 +351,7 @@ if __name__ == "__main__":
             resume="allow",
         )
         config_yaml.run_href = wandb.run.get_url()
-
-        wandb.run.log_code(
-            "./src"
-        )  # src 내의 모든 파일을 업로드. Artifacts에서 확인 가능
+        wandb.run.log_code("./src")
 
     ######################## MAIN
     main(config_yaml)

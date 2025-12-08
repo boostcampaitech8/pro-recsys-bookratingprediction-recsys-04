@@ -10,8 +10,8 @@ memo: |-
 # 아래의 일곱 항목들은 argparser로 받은 인자를 우선적으로 사용합니다.
 #   $ python main.py --config config.yaml --seed 2024
 #   과 같이 실행할 경우 seed는 0이 아닌 2024로 설정됩니다.
-predict: False  # 예측할 경우 True로 설정
-checkpoint: '../saved/checkpoints/FM_best.pt'   # 예측 시 불러올 모델 경로
+predict: False # 예측할 경우 True로 설정
+checkpoint: '/data/ephemeral/home/Seung/saved/checkpoints/20251208_095221_Image_DeepFM_best.pt'   # 예측 시 불러올 모델 경로
 seed: 0         # 시드 고정
 device: cuda    # 가능한 값 : cpu, cuda, mps
 model: FM       # 모델 선택
@@ -109,9 +109,9 @@ dataloader:
     num_workers: 0      # 멀티프로세서 수. 0: 메인프로세서만 사용
 
 optimizer:
-    type: Adam  # 사용가능한 optimizer: torch.optim.Optimizer 클래스 (https://pytorch.org/docs/stable/optim.html#algorithms)
+    type: AdamW  # 사용가능한 optimizer: torch.optim.Optimizer 클래스 (https://pytorch.org/docs/stable/optim.html#algorithms)
     args:           # 사용하고자 하는 클래스의 파라미터를 참고하여 추가해주시면 되며, 관계가 없는 파라미터는 무시됩니다.
-        lr: 5e-3         # 예) 모든 옵티마이저에서 사용되는 학습률
+        lr: 3e-3         # 예) 모든 옵티마이저에서 사용되는 학습률
         weight_decay: 1e-4 # 예) Adam 등 / L2 정규화 가중치
         amsgrad: False      # 예) Adam 등 / amsgrad 사용 여부
 
@@ -132,11 +132,11 @@ lr_scheduler:
 metrics: [ MSELoss, MAELoss, RMSELoss ]  # 평가 지표. 직접 정의한 loss 클래스 또는 torch.nn.Module 클래스 (https://pytorch.org/docs/stable/nn.html#loss-functions)
 
 train:
-    epochs: 10                      # 학습 에폭 수
+    epochs: 2                      # 학습 에폭 수
     log_dir: ../saved/log                  # 로그 저장 경로
     ckpt_dir: ../saved/checkpoint    # 모델 저장 경로
     submit_dir: ../saved/submit            # 예측 저장 경로
     save_best_model: True
     early_stopping_patience: 10               # True: val_loss가 최소인 모델 저장 / False: 모든 모델 저장
     resume: False                              # 이어서 학습할 경우 True
-    resume_path: saved/checkpoint/20251204_043510_NCF_best.pt    # 이어서 학습할 모델 경로
+    resume_path: ../saved/checkpoint/20251204_043510_NCF_best.pt    # 이어서 학습할 모델 경로

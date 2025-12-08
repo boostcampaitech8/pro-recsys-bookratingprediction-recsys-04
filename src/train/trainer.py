@@ -212,7 +212,7 @@ def test(args, model, dataloader, setting, checkpoint=None):
         model.load_state_dict(torch.load(model_path, weights_only=True))
 
     model.eval()
-    with torch.no_grad():  # ⬅️ 요거 추가!
+    with torch.no_grad():
         for data in dataloader["test_dataloader"]:
             if args.model_args[args.model].datatype == "image":
                 x = [
@@ -230,3 +230,5 @@ def test(args, model, dataloader, setting, checkpoint=None):
 
             y_hat = model(x)
             predicts.extend(y_hat.tolist())
+
+    return predicts
