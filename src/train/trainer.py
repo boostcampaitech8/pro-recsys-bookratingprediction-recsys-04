@@ -27,8 +27,49 @@ def train(args, model, dataloader, logger, setting):
 
     trainable_params = filter(lambda p: p.requires_grad, model.parameters())
     optimizer = getattr(optimizer_module, args.optimizer.type)(
-        trainable_params, **args.optimizer.args
-    )
+        trainable_params, **args.optimizer.args)
+    
+    # MF인경우 모델 옵티마이저 수정
+    if args.model == 'MF':
+        ########## 추가 실험 ##############
+        # 1. Config 딕셔너리를 복사합니다. (원본 args 훼손 방지)
+        optimizer_args = args.optimizer.args.copy()
+        
+        # 2. 'weight_decay' 값을 뽑아냅니다. (딕셔너리에서는 삭제됨)
+        # 만약 config에 weight_decay가 없으면 기본값 0.0을 씁니다.
+        weight_decay = optimizer_args.pop('weight_decay', 0.0)
+        
+        decay_params = []
+        no_decay_params = []
+
+        # 3. 모델의 파라미터 이름을 확인하며 그룹 나누기
+        for name, param in model.named_parameters():
+            if not param.requires_grad:
+                continue
+                
+            # [핵심] 이름이 .bias로 끝나면 (Global Bias, Layer Bias) -> 규제 제외
+            # 주의: User Bias는 임베딩이므로 이름이 'weight'라 여기 걸리지 않음 (규제 적용됨 O)
+            if name.endswith('.bias'):
+                no_decay_params.append(param)
+            else:
+                decay_params.append(param)
+
+        # 4. 그룹별 설정 생성
+        param_groups = [
+            # 그룹 A: Config에 적힌 weight_decay (1e-4) 적용
+            {'params': decay_params, 'weight_decay': weight_decay},
+            
+            # 그룹 B: Weight Decay 0.0 강제 적용
+            {'params': no_decay_params, 'weight_decay': 0.0}
+        ]
+
+        # 5. 옵티마이저 생성
+        # param_groups: 우리가 나눈 그룹 리스트
+        # **optimizer_args: weight_decay가 빠진 나머지 설정들 (lr=1e-4, amsgrad=False)
+        optimizer = getattr(optimizer_module, args.optimizer.type)(
+            param_groups, **optimizer_args
+        )
+        ############ 추가 실험 ############
 
     if args.lr_scheduler.use:
         args.lr_scheduler.args = {
