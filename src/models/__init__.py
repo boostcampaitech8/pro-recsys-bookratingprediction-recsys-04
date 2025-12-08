@@ -7,4 +7,5 @@
 # from .FM_Image import Image_FM, Image_DeepFM, ResNet_DeepFM
 # from .FM_Text import Text_FM, Text_DeepFM
 from .CatBoost import CatBoost
+from .XGBoost import XGBoost
 from .VAE import VAE
