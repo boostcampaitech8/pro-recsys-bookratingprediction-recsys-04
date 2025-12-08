@@ -101,34 +101,11 @@ def process_context_data(users, books, n_clusters=200):
     embeddings = embed_categories(books_, text_col='category_text')
     books_['category_cluster'] = cluster_categories(embeddings, n_clusters=n_clusters)
 
-    # 안전: year_of_publication 숫자 변환 (변환 실패는 NaN)
-    books_['year_of_publication'] = pd.to_numeric(books_['year_of_publication'], errors='coerce')
-
-    # ----------------------------------------
-    # 1) IQR 기반 정상 범위 계산 (이상치 판정용)
-    # ----------------------------------------
-    Q1, Q3 = books_['year_of_publication'].quantile([0.25, 0.75])
-    IQR = Q3 - Q1
-
-    lower = Q1 - 1.5 * IQR
-    upper = Q3 + 1.5 * IQR
-
-    print("정상 출판년도 범위:", int(lower), "~", int(upper))
-
-    # ----------------------------------------
-    # 2) Clip 방식 적용 (원본 유지 + clipped 컬럼 추가)
-    # ----------------------------------------
-    books_['year_of_publication_clipped'] = books_['year_of_publication'].clip(lower, upper)
-
-    # ----------------------------------------
-    # 3) publication_range (십 년대) 생성 — 결측은 그대로 np.nan 유지
-    # ----------------------------------------
-    def to_decade_year(x):
-        if pd.isna(x):
-            return np.nan
-        return int((x // 10) * 10)
-
-    books_['publication_range'] = books_['year_of_publication_clipped'].apply(to_decade_year)
+    # --- 여기에 publication_range 추가
+    # year_of_publication 결측치는 np.nan 처리
+    books_['publication_range'] = books_['year_of_publication'].apply(
+        lambda x: int(x // 10 * 10) if not pd.isna(x) else np.nan
+    )
 
     # 기존 category 컬럼은 필요하면 유지, cluster를 feature로 사용
     return users_, books_
@@ -145,8 +122,8 @@ def context_data_load(args):
 
     users_, books_ = process_context_data(users, books, n_clusters=200)
 
-    user_features = ["user_id", "age_group", "location_country", "location_state", "location_city"] + ["age"]
-    book_features = ["isbn", "book_title", "book_author", "publisher", "language", "category_cluster", "publication_range"] +["category"]
+    user_features = ["user_id", "age_group", "location_country", "location_state", "location_city"]
+    book_features = ["isbn", "book_title", "book_author", "publisher", "language", "category_cluster", "publication_range"]
 
     sparse_cols = user_features + book_features
 
