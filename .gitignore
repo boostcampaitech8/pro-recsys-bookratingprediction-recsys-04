@@ -1,8 +1,6 @@
 /data
 .ipynb_checkpoints/
 .github/
-/ensemble.py
-/main.py
 /saved
 
 # Byte-compiled / optimized / DLL files
