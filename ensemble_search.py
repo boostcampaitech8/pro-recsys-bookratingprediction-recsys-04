@@ -8,7 +8,7 @@ from scipy.optimize import minimize
 # 1. 설정: csv 파일들의 경로를 리스트에 넣으세요
 # =================================================================
 
-OOF_FILE_LIST = [
+CSV_FILE_LIST = [
     "../saved/submit/20251209_015500_NCF_kfold_5_OOF.csv",
     "../saved/submit/20251209_070337_FM_kfold_5_OOF.csv",
     "../saved/submit/20251209_062026_Image_DeepFM_kfold_5_OOF.csv",
@@ -23,11 +23,11 @@ PRED_COL = "predict"  # 예측값 컬럼 (모든 파일 공통)
 # =================================================================
 
 
-def load_oof_predictions(file_paths):
+def load_csv_predictions(file_paths):
     preds_matrix = []
     y_true = None
 
-    print(f"📂 총 {len(file_paths)}개의 OOF 파일을 로드합니다...")
+    print(f"📂 총 {len(file_paths)}개의 csv 파일을 로드합니다...")
 
     for i, path in enumerate(file_paths):
         try:
@@ -109,7 +109,7 @@ def optimize_weights(predictions, y_true):
 
 def main():
     # 데이터 로드
-    X_preds, y_true = load_oof_predictions(OOF_FILE_LIST)
+    X_preds, y_true = load_csv_predictions(CSV_FILE_LIST)
 
     if X_preds is None:
         print("데이터 로드 실패.")
@@ -135,7 +135,7 @@ def main():
 
         print("\n🏆 최적 가중치 조합:")
         for i, w in enumerate(best_weights):
-            file_name = OOF_FILE_LIST[i].split("/")[-1]
+            file_name = CSV_FILE_LIST[i].split("/")[-1]
             print(f"   Model {i} ({file_name}): {w:.4f} ({w*100:.1f}%)")
 
         print("\n🚀 팁: 이 가중치를 사용해 최종 제출 파일을 만드세요.")
