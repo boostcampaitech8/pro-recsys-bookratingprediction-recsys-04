@@ -5,112 +5,63 @@ from tqdm import tqdm
 
 def train_catboost(args, model, data, logger, setting):
     """
-    CatBoost 모델을 학습합니다.
-
-    Parameters
-    ----------
-    args : OmegaConf
-        학습 설정
-    model : CatBoost
-        CatBoost 모델 인스턴스
-    data : dict
-        학습/검증 데이터
-    logger : Logger
-        로깅 객체
-    setting : Setting
-        설정 객체
-
-    Returns
-    -------
-    model : CatBoost
-        학습된 모델
+    CatBoost 전용 training 함수
+    - DataLoader 사용하지 않음
+    - DataFrame 그대로 사용
+    - categorical_features를 모델에 전달
     """
     print(f'--------------- CatBoost TRAINING ---------------')
 
-    # DataLoader에서 데이터 추출
-    X_train_list, y_train_list = [], []
-    for batch in tqdm(data['train_dataloader'], desc='Extracting training data'):
-        if isinstance(batch, dict):
-            X_train_list.append(batch['user_book_vector'].cpu().numpy())
-            y_train_list.append(batch['rating'].cpu().numpy())
-        else:
-            X_train_list.append(batch[0].cpu().numpy())
-            y_train_list.append(batch[1].cpu().numpy())
+    X_train = data["X_train"]
+    y_train = data["y_train"]
 
-    X_train = np.vstack(X_train_list)
-    y_train = np.concatenate(y_train_list)
-
-    # 검증 데이터가 있는 경우
     eval_set = None
-    if args.dataset.valid_ratio != 0 and 'valid_dataloader' in data:
-        X_valid_list, y_valid_list = [], []
-        for batch in tqdm(data['valid_dataloader'], desc='Extracting validation data'):
-            if isinstance(batch, dict):
-                X_valid_list.append(batch['user_book_vector'].cpu().numpy())
-                y_valid_list.append(batch['rating'].cpu().numpy())
-            else:
-                X_valid_list.append(batch[0].cpu().numpy())
-                y_valid_list.append(batch[1].cpu().numpy())
+    if args.dataset.valid_ratio != 0:
+        eval_set = (data["X_valid"], data["y_valid"])
 
-        X_valid = np.vstack(X_valid_list)
-        y_valid = np.concatenate(y_valid_list)
-        eval_set = (X_valid, y_valid)
+    categorical = data["categorical_features"]
 
-    # CatBoost 학습
-    print('Training CatBoost model...')
-    model.fit(X_train, y_train, eval_set=eval_set)
+    print("Training CatBoost model...")
 
+    model.model.fit(
+        X_train,
+        y_train,
+        cat_features=data["categorical_features"],
+        eval_set=eval_set,
+        verbose=100
+    )
+
+    # ---------------------------
     # 모델 저장
+    # ---------------------------
     if args.train.save_best_model:
         import os
         os.makedirs(args.train.ckpt_dir, exist_ok=True)
-        model_path = os.path.join(args.train.ckpt_dir, f'{setting.save_time}_{args.model}_best.cbm')
-        model.model.save_model(model_path)
-        print(f'Model saved to {model_path}')
+        model_path = os.path.join(
+            args.train.ckpt_dir, f"{setting.save_time}_{args.model}_best.cbm"
+        )
+        model.save_model(model_path)
+        print(f"Model saved to {model_path}")
 
     return model
 
 
+
 def test_catboost(args, model, data, setting, checkpoint_path=None):
     """
-    CatBoost 모델로 예측을 수행합니다.
-
-    Parameters
-    ----------
-    args : OmegaConf
-        예측 설정
-    model : CatBoost
-        CatBoost 모델 인스턴스
-    data : dict
-        테스트 데이터
-    setting : Setting
-        설정 객체
-    checkpoint_path : str, optional
-        불러올 모델 경로
-
-    Returns
-    -------
-    predicts : np.ndarray
-        예측 결과
+    CatBoost 전용 inference
+    - DataFrame 그대로 입력
     """
-    # 체크포인트에서 모델 로드
+
+    # 1) checkpoint load
     if checkpoint_path:
-        print(f'Loading model from {checkpoint_path}')
-        model.model.load_model(checkpoint_path)
-        model.is_fitted = True
+        print(f"Loading model from {checkpoint_path}")
+        model.load_model(checkpoint_path)
 
-    # 테스트 데이터 추출
-    X_test_list = []
-    for batch in tqdm(data['test_dataloader'], desc='Extracting test data'):
-        if isinstance(batch, dict):
-            X_test_list.append(batch['user_book_vector'].cpu().numpy())
-        else:
-            X_test_list.append(batch[0].cpu().numpy())
+    X_test = data["test_df"]
+    all_features = data["all_features"]
 
-    X_test = np.vstack(X_test_list)
-
-    # 예측
-    print('Making predictions...')
-    predicts = model.predict(X_test)
+    print("Making predictions...")
+    predicts = model.predict(X_test[all_features])
 
     return predicts
