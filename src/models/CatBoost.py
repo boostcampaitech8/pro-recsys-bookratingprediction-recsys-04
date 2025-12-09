@@ -20,7 +20,7 @@ class CatBoost(nn.Module):
     def __init__(self, args, data, global_seed=None):
         super().__init__()
         self.args = args
-        self.field_dims = data['field_dims']
+        self.cat_features = data['field_names']
 
         # global_seed가 전달되지 않으면 args에서 찾고, 그것도 없으면 기본값 42 사용
         random_seed = global_seed if global_seed is not None else (args.random_seed if hasattr(args, 'random_seed') else 42)
@@ -33,6 +33,7 @@ class CatBoost(nn.Module):
             loss_function='RMSE',
             eval_metric='RMSE',
             random_seed=random_seed,
+            cat_features=self.cat_features,
             verbose=args.verbose if hasattr(args, 'verbose') else False,
             task_type='GPU' if args.task_type == 'GPU' and torch.cuda.is_available() else 'CPU',
             devices=args.devices if hasattr(args, 'devices') else '0',
@@ -43,7 +44,7 @@ class CatBoost(nn.Module):
         self.is_fitted = False
 
 
-    def fit(self, X, y, eval_set=None):
+    def fit(self, X, y, eval_set=None, **kwargs):
         """
         CatBoost 모델을 학습합니다.
 
@@ -56,22 +57,18 @@ class CatBoost(nn.Module):
         eval_set : tuple, optional
             검증 데이터 (X_val, y_val)
         """
-        # 범주형 피처 인덱스 지정 (모든 컬럼을 범주형으로 처리)
-        cat_features = list(range(X.shape[1]))
 
         if eval_set is not None:
             self.model.fit(
                 X, y,
-                cat_features=cat_features,
                 eval_set=eval_set,
-                use_best_model=True,
-                early_stopping_rounds=50,  # 50 iteration 동안 개선 없으면 조기 종료
-                verbose=100 if (self.args.verbose if hasattr(self.args, 'verbose') else False) else False  # 100 iteration마다 출력
+                use_best_model=kwargs['use_best_model'],
+                early_stopping_rounds=kwargs['early_stopping_rounds'],  # 50 iteration 동안 개선 없으면 조기 종료
+                verbose=kwargs['verbose'] if (self.args.verbose if hasattr(self.args, 'verbose') else False) else False  # 100 iteration마다 출력
             )
         else:
             self.model.fit(
                 X, y,
-                cat_features=cat_features,
                 verbose=self.args.verbose if hasattr(self.args, 'verbose') else False
             )
 
