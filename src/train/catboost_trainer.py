@@ -1,82 +1,160 @@
+import os
 import numpy as np
-import pandas as pd
+import torch
 from tqdm import tqdm
-
+import optuna
+from sklearn.model_selection import KFold
+from sklearn.metrics import mean_squared_error
+from catboost import CatBoostRegressor
 
 def train_catboost(args, model, data, logger, setting):
     """
     CatBoost 모델을 학습합니다.
-
-    Parameters
-    ----------
-    args : OmegaConf
-        학습 설정
-    model : CatBoost
-        CatBoost 모델 인스턴스
-    data : dict
-        학습/검증 데이터
-    logger : Logger
-        로깅 객체
-    setting : Setting
-        설정 객체
-
-    Returns
-    -------
-    model : CatBoost
-        학습된 모델
+    DataLoader를 사용하지 않고 DataFrame을 직접 주입합니다.
     """
-    print(f"--------------- {args.model} TRAINING ---------------")
+    
+    # 설정값 읽기 (옵션)
+    use_optuna = False
+    n_trials = 30
+    k_folds = 1
+    if hasattr(args, 'model_args') and args.model in args.model_args and 'use_optuna' in args.model_args[args.model]:
+        use_optuna = bool(args.model_args[args.model]['use_optuna'])
+    if hasattr(args, 'model_args') and args.model in args.model_args and 'optuna_n_trials' in args.model_args[args.model]:
+        n_trials = int(args.model_args[args.model]['optuna_n_trials'])
+    if hasattr(args, 'model_args') and args.model in args.model_args and 'k_folds' in args.model_args[args.model]:
+        k_folds = int(args.model_args[args.model]['k_folds'])
 
-    # DataLoader에서 데이터 추출
-    X_train_list, y_train_list = [], []
-    for batch in tqdm(data['train_dataloader'], desc='Extracting training data'):
-        if isinstance(batch, dict):
-            X_train_list.append(batch['user_book_vector'].cpu().numpy())
-            y_train_list.append(batch['rating'].cpu().numpy())
-        else:
-            X_train_list.append(batch[0].cpu().numpy())
-            y_train_list.append(batch[1].cpu().numpy())
+    # Optuna 또는 K-Fold 사용 시: 전체 train을 기반으로 CV 수행
+    if use_optuna or k_folds > 1:
+        df = data['train']
+        X_all = df.drop('rating', axis=1)
+        y_all = df['rating']
+        seed = args.seed if hasattr(args, 'seed') else 42
 
-    X_train = np.vstack(X_train_list)
-    y_train = np.concatenate(y_train_list)
+        def make_params(trial=None):
+            if trial is None:
+                p = dict(
+                    iterations=getattr(args.model_args[args.model], 'iterations', 5000),
+                    learning_rate=getattr(args.model_args[args.model], 'learning_rate', 0.03),
+                    depth=getattr(args.model_args[args.model], 'depth', 6),
+                    loss_function='RMSE',
+                    eval_metric='RMSE',
+                    random_seed=seed,
+                    task_type='GPU' if getattr(args.model_args[args.model], 'task_type', 'CPU') == 'GPU' and torch.cuda.is_available() else 'CPU',
+                    devices=getattr(args.model_args[args.model], 'devices', '0'),
+                    train_dir='saved/catboost_info',
+                )
+                return p
+            p = dict(
+                iterations=trial.suggest_int('iterations', 3500, 6000, step=500),
+                learning_rate=trial.suggest_float('learning_rate', 0.005, 0.08, log=True),
+                depth=trial.suggest_int('depth', 5, 7),
+                l2_leaf_reg=trial.suggest_float('l2_leaf_reg', 1e-2, 10.0, log=True),
+                bagging_temperature=trial.suggest_float('bagging_temperature', 0.0, 0.5),
+                random_strength=trial.suggest_float('random_strength', 0.0, 10.0),
+                border_count=trial.suggest_int('border_count', 32, 255),
+                loss_function='RMSE',
+                eval_metric='RMSE',
+                random_seed=seed,
+                task_type='GPU' if getattr(args.model_args[args.model], 'task_type', 'CPU') == 'GPU' and torch.cuda.is_available() else 'CPU',
+                devices=getattr(args.model_args[args.model], 'devices', '0'),
+                train_dir='saved/catboost_info',
+            )
+            return p
 
-    # 검증 데이터가 있는 경우
-    eval_set = None
-    if args.dataset.valid_ratio != 0 and 'valid_dataloader' in data:
-        X_valid_list, y_valid_list = [], []
-        for batch in tqdm(data['valid_dataloader'], desc='Extracting validation data'):
-            if isinstance(batch, dict):
-                X_valid_list.append(batch['user_book_vector'].cpu().numpy())
-                y_valid_list.append(batch['rating'].cpu().numpy())
-            else:
-                X_valid_list.append(batch[0].cpu().numpy())
-                y_valid_list.append(batch[1].cpu().numpy())
+        def objective(trial):
+            params = make_params(trial)
+            kf = KFold(n_splits=k_folds, shuffle=True, random_state=seed)
+            rmses = []
+            for tr_idx, va_idx in kf.split(X_all):
+                X_tr, X_va = X_all.iloc[tr_idx], X_all.iloc[va_idx]
+                y_tr, y_va = y_all.iloc[tr_idx], y_all.iloc[va_idx]
+                estimator = CatBoostRegressor(**params, cat_features=getattr(model, 'cat_features', None), verbose=500)
+                estimator.fit(X_tr, y_tr, eval_set=(X_va, y_va), use_best_model=True, early_stopping_rounds=100)
+                pred = estimator.predict(X_va)
+                rmse = np.sqrt(mean_squared_error(y_va, pred))
+                rmses.append(rmse)
+            return float(np.mean(rmses))
 
-        X_valid = np.vstack(X_valid_list)
-        y_valid = np.concatenate(y_valid_list)
-        eval_set = (X_valid, y_valid)
+        best_params = make_params(None)
+        if use_optuna:
+            study = optuna.create_study(direction='minimize')
+            study.optimize(objective, n_trials=n_trials)
+            best_params = make_params(study.best_trial)
 
-    # CatBoost 학습
-    print(f'Training {args.model} model...')
-    model.fit(X_train, y_train, eval_set=eval_set)
+        print(f'Training {args.model} with K-Fold={k_folds}...')
+        print(best_params)
+        kf = KFold(n_splits=k_folds, shuffle=True, random_state=seed)
+        fold_models = []
+        for tr_idx, va_idx in kf.split(X_all):
+            X_tr, X_va = X_all.iloc[tr_idx], X_all.iloc[va_idx]
+            y_tr, y_va = y_all.iloc[tr_idx], y_all.iloc[va_idx]
+            estimator = CatBoostRegressor(**best_params, cat_features=getattr(model, 'cat_features', None), verbose=True)
+            estimator.fit(X_tr, y_tr, eval_set=(X_va, y_va), use_best_model=True, early_stopping_rounds=100, verbose=500)
+            fold_models.append(estimator)
 
-    # 모델 저장
+        setattr(model, 'fold_models', fold_models)
+        setattr(model, 'is_fitted', True)
+    else:
+        # 1. 학습 데이터 추출 (DataFrame or Series)
+        # boost_data_loader에서 반환한 딕셔너리에 이미 DF 형태로 들어있습니다.
+        X_train = data['X_train']
+        y_train = data['y_train']
+
+        # 2. 검증 데이터 구성
+        eval_set = None
+        if args.dataset.valid_ratio != 0 and 'X_valid' in data:
+            X_valid = data['X_valid']
+            y_valid = data['y_valid']
+            eval_set = (X_valid, y_valid)
+
+        # 4. 학습 시작
+        print(f'Training {args.model} model...')
+        
+        # 모델 wrapper의 fit 메소드가 kwargs를 받아 CatBoost fit으로 넘겨준다고 가정합니다.
+        # 만약 wrapper가 없다면 model.fit(...)에 직접 cat_features를 넣습니다.
+        model.fit(
+            X_train, 
+            y_train, 
+            eval_set=eval_set, 
+            use_best_model=True,
+            early_stopping_rounds=100,
+            verbose=100
+        )
+
+    # 5. 모델 저장
     if args.train.save_best_model:
-        import os
         os.makedirs(args.train.ckpt_dir, exist_ok=True)
+        
         if args.model == 'CatBoost':
             ext = '.cbm'
-            model_path = os.path.join(args.train.ckpt_dir, f"{setting.save_time}_{args.model}_best{ext}")
-            model.model.save_model(model_path)
+            # Fold 모델이 존재하면 각 fold를 저장
+            if hasattr(model, 'fold_models'):
+                for idx, fm in enumerate(model.fold_models):
+                    model_path = os.path.join(args.train.ckpt_dir, f"{setting.save_time}_{args.model}_fold{idx}{ext}")
+                    fm.save_model(model_path)
+            else:
+                model_path = os.path.join(args.train.ckpt_dir, f"{setting.save_time}_{args.model}_best{ext}")
+                # Wrapper 클래스를 사용하는 경우 model.model 접근
+                if hasattr(model, 'model'):
+                    model.model.save_model(model_path)
+                else: # Wrapper가 아닌 원본 객체인 경우
+                    model.save_model(model_path)
+                
         elif args.model == 'XGBoost':
             ext = '.json'
             model_path = os.path.join(args.train.ckpt_dir, f"{setting.save_time}_{args.model}_best{ext}")
-            model.model.save_model(model_path)
+            if hasattr(model, 'model'):
+                model.model.save_model(model_path)
+            else:
+                model.save_model(model_path)
+                
         else:
-            # default behavior
+            # PyTorch 모델 등
             ext = '.pt'
             model_path = os.path.join(args.train.ckpt_dir, f"{setting.save_time}_{args.model}_best{ext}")
             torch.save(model.state_dict(), model_path)
+            
         print(f'Model saved to {model_path}')
 
     return model
@@ -85,43 +163,36 @@ def train_catboost(args, model, data, logger, setting):
 def test_catboost(args, model, data, setting, checkpoint_path=None):
     """
     CatBoost 모델로 예측을 수행합니다.
-
-    Parameters
-    ----------
-    args : OmegaConf
-        예측 설정
-    model : CatBoost
-        CatBoost 모델 인스턴스
-    data : dict
-        테스트 데이터
-    setting : Setting
-        설정 객체
-    checkpoint_path : str, optional
-        불러올 모델 경로
-
-    Returns
-    -------
-    predicts : np.ndarray
-        예측 결과
+    DataLoader 반복 없이 DataFrame 전체를 한번에 예측합니다.
     """
-    # 체크포인트에서 모델 로드
+    
+    # 1. 모델 로드
     if checkpoint_path:
         print(f'Loading model from {checkpoint_path}')
-        model.model.load_model(checkpoint_path)
-        model.is_fitted = True
-
-    # 테스트 데이터 추출
-    X_test_list = []
-    for batch in tqdm(data['test_dataloader'], desc='Extracting test data'):
-        if isinstance(batch, dict):
-            X_test_list.append(batch['user_book_vector'].cpu().numpy())
+        # Wrapper 처리
+        if hasattr(model, 'model'):
+            model.model.load_model(checkpoint_path)
         else:
-            X_test_list.append(batch[0].cpu().numpy())
+            model.load_model(checkpoint_path)
+        
+        # 모델 wrapper에 is_fitted 플래그가 있다면 설정
+        if hasattr(model, 'is_fitted'):
+            model.is_fitted = True
 
-    X_test = np.vstack(X_test_list)
+    # 2. 테스트 데이터 준비
+    # data['test']는 이미 DataFrame 형태입니다.
+    X_test = data['test']
 
-    # 예측
+    # 3. 예측 수행
     print('Making predictions...')
-    predicts = model.predict(X_test)
+    # Fold 모델이 존재하면 앙상블(평균)
+    if hasattr(model, 'fold_models'):
+        fold_preds = []
+        for fm in model.fold_models:
+            fold_preds.append(fm.predict(X_test))
+        predicts = np.mean(np.vstack(fold_preds), axis=0)
+    else:
+        # DataFrame을 통째로 넣으면 CatBoost가 내부적으로 멀티스레딩을 활용해 매우 빠르게 처리합니다.
+        predicts = model.predict(X_test)
 
     return predicts
