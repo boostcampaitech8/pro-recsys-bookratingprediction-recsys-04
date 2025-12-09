@@ -9,3 +9,6 @@ wandb/
 __pycache__/
 *.py[cod]
 *$py.class
+
+# 환경 파일 업로드 x
+.env
