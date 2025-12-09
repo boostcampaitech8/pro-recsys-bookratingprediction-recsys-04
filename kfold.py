@@ -285,6 +285,7 @@ if __name__ == "__main__":
             "Text_FM",
             "Text_DeepFM",
             "ResNet_DeepFM",
+            "NCF_B",
         ],
         help="학습 및 예측할 모델을 선택할 수 있습니다.",
     )
