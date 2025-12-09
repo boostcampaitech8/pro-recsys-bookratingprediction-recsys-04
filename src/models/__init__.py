@@ -1,6 +1,8 @@
 # from .FM import FactorizationMachine as FM
 # from .FFM import FieldAwareFactorizationMachine as FFM
 # from .DeepFM import DeepFM
+from .NCF import NeuralCollaborativeFilteringWithBias as NCF_B
+from .MF import GeneralMatrixFactorizeModel as MF
 # from .NCF import NeuralCollaborativeFiltering as NCF
 # from .WDN import WideAndDeep as WDN
 # from .DCN import DeepCrossNetwork as DCN

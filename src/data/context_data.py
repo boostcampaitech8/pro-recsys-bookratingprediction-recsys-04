@@ -8,9 +8,9 @@ from .basic_data import basic_data_split
 
 def str2list(x: str) -> list:
     """문자열을 리스트로 변환하는 함수"""
-    if x[0] != '[':
+    if x[0] != "[":
         return x.split(", ")
-        
+
     return x[1:-1].split(", ")
 
 
@@ -166,6 +166,23 @@ def context_data_load(args):
         "category",
         "publication_range",
     ]
+
+    # CatBoost일 때는 age_range, publication_range 제외
+    if args.model == "CatBoost":
+        user_features = [
+            "user_id",
+            "location_country",
+            "location_state",
+            "location_city",
+        ]
+        book_features = [
+            "isbn",
+            "book_title",
+            "book_author",
+            "publisher",
+            "language",
+            "category",
+        ]
     sparse_cols = (
         ["user_id", "isbn"]
         + list(set(user_features + book_features) - {"user_id", "isbn"})
@@ -173,13 +190,15 @@ def context_data_load(args):
         else user_features + book_features
     )
 
+    numeric_cols = ["age", "year_of_publication"]
+
     # 선택한 컬럼만 추출하여 데이터 조인
     train_df = train.merge(users_, on="user_id", how="left").merge(
         books_, on="isbn", how="left"
-    )[sparse_cols + ["rating"]]
+    )[sparse_cols + numeric_cols + ["rating"]]
     test_df = test.merge(users_, on="user_id", how="left").merge(
         books_, on="isbn", how="left"
-    )[sparse_cols]
+    )[sparse_cols + numeric_cols]
     all_df = pd.concat([train_df, test_df], axis=0)
 
     # feature_cols의 데이터만 라벨 인코딩하고 인덱스 정보를 저장
@@ -199,6 +218,11 @@ def context_data_load(args):
     # field_dims 계산 시 rating 컬럼 제외하고 정확히 계산
     # (train_df.columns에는 rating이 포함되어 있으므로 주의)
     field_dims = [len(label2idx[col]) for col in sparse_cols]
+
+    # FM/NCF 등 인덱스 기반 모델을 위해 numeric은 제거, CatBoost에서는 유지
+    if args.model != "CatBoost":
+        train_df = train_df.drop(columns=numeric_cols)
+        test_df = test_df.drop(columns=numeric_cols)
 
     data = {
         "train": train_df,
@@ -238,48 +262,51 @@ def context_data_loader(args, data):
     data : dict
         DataLoader가 추가된 데이터를 반환합니다.
     """
+    if args.model == "CatBoost":
+        return data
 
-    train_dataset = TensorDataset(
-        torch.LongTensor(data["X_train"].values),
-        torch.LongTensor(data["y_train"].values),
-    )
-    valid_dataset = (
-        TensorDataset(
-            torch.LongTensor(data["X_valid"].values),
-            torch.LongTensor(data["y_valid"].values),
+    else:
+        train_dataset = TensorDataset(
+            torch.LongTensor(data["X_train"].values),
+            torch.LongTensor(data["y_train"].values),
         )
-        if args.dataset.valid_ratio != 0
-        else None
-    )
-    test_dataset = TensorDataset(torch.LongTensor(data["test"].values))
+        valid_dataset = (
+            TensorDataset(
+                torch.LongTensor(data["X_valid"].values),
+                torch.LongTensor(data["y_valid"].values),
+            )
+            if args.dataset.valid_ratio != 0
+            else None
+        )
+        test_dataset = TensorDataset(torch.LongTensor(data["test"].values))
 
-    train_dataloader = DataLoader(
-        train_dataset,
-        batch_size=args.dataloader.batch_size,
-        shuffle=args.dataloader.shuffle,
-        num_workers=args.dataloader.num_workers,
-    )
-    valid_dataloader = (
-        DataLoader(
-            valid_dataset,
+        train_dataloader = DataLoader(
+            train_dataset,
+            batch_size=args.dataloader.batch_size,
+            shuffle=args.dataloader.shuffle,
+            num_workers=args.dataloader.num_workers,
+        )
+        valid_dataloader = (
+            DataLoader(
+                valid_dataset,
+                batch_size=args.dataloader.batch_size,
+                shuffle=False,
+                num_workers=args.dataloader.num_workers,
+            )
+            if args.dataset.valid_ratio != 0
+            else None
+        )
+        test_dataloader = DataLoader(
+            test_dataset,
             batch_size=args.dataloader.batch_size,
             shuffle=False,
             num_workers=args.dataloader.num_workers,
         )
-        if args.dataset.valid_ratio != 0
-        else None
-    )
-    test_dataloader = DataLoader(
-        test_dataset,
-        batch_size=args.dataloader.batch_size,
-        shuffle=False,
-        num_workers=args.dataloader.num_workers,
-    )
 
-    data["train_dataloader"], data["valid_dataloader"], data["test_dataloader"] = (
-        train_dataloader,
-        valid_dataloader,
-        test_dataloader,
-    )
+        data["train_dataloader"], data["valid_dataloader"], data["test_dataloader"] = (
+            train_dataloader,
+            valid_dataloader,
+            test_dataloader,
+        )
 
     return data
