@@ -109,15 +109,19 @@ model_args:     # model에 해당하는 파라미터만 실질적으로 사용�
         datatype: context         # basic, context 가능 (CatBoost는 범주형 변수에 특화)
         # vector_create: False
         # pretrained_model: 'sentence-transformers/all-mpnet-base-v2'   # 텍스트 임베딩에 사용할 사전학습 모델
-        iterations: 5000        # 부스팅 반복 횟수 (트리 개수)
-        learning_rate: 0.03     # 학습률
-        depth: 6                # 트리 깊이
+        iterations: 5500        # 부스팅 반복 횟수 (트리 개수)
+        learning_rate: 0.028211811106539728     # 학습률
+        depth: 7                # 트리 깊이
+        l2_leaf_reg: 0.037506641311818495       # 가중치 규제
+        bagging_temperature: 0.2451051395979172 # bagging 가중치
+        random_strength: 6.132025213331418      # exploration 확률
+        border_count: 131                       # 수치형 변수 범주화하는 구간 개수
         task_type: GPU          # GPU 또는 CPU (GPU 사용 시 학습 속도 향상)
         devices: '0'            # 사용할 GPU 디바이스 번호
         verbose: True          # 학습 과정 출력 여부
-        use_optuna: true
+        use_optuna: False
         optuna_n_trials: 40
-        k_folds: 5
+        k_folds: 10
     XGBoost:
         datatype: context
         n_estimators: 3000
@@ -137,7 +141,7 @@ model_args:     # model에 해당하는 파라미터만 실질적으로 사용�
 
 dataset:
     data_path: /data/ephemeral/home/data/    # 데이터셋 경로
-    valid_ratio: 0.2    # Train / Vaildation split
+    valid_ratio: 0.1    # Train / Vaildation split
 
 dataloader:
     batch_size: 1024    # 배치 사이즈

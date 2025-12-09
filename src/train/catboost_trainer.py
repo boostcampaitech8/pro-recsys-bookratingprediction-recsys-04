@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 import optuna
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, train_test_split
 from sklearn.metrics import mean_squared_error
 from catboost import CatBoostRegressor
 
@@ -29,7 +29,9 @@ def train_catboost(args, model, data, logger, setting):
         df = data['train']
         X_all = df.drop('rating', axis=1)
         y_all = df['rating']
+
         seed = args.seed if hasattr(args, 'seed') else 42
+        X_train, X_valid, y_train, y_valid = train_test_split(X_all, y_all, test_size=0.1, random_state=seed)
 
         def make_params(trial=None):
             if trial is None:
@@ -37,6 +39,10 @@ def train_catboost(args, model, data, logger, setting):
                     iterations=getattr(args.model_args[args.model], 'iterations', 5000),
                     learning_rate=getattr(args.model_args[args.model], 'learning_rate', 0.03),
                     depth=getattr(args.model_args[args.model], 'depth', 6),
+                    l2_leaf_reg=getattr(args.model_args[args.model], 'l2_leaf_reg', 0.03),
+                    bagging_temperature=getattr(args.model_args[args.model], 'bagging_temperature', 0.25),
+                    random_strength=getattr(args.model_args[args.model], 'random_strength', 6),
+                    border_count=getattr(args.model_args[args.model], 'border_count', 130),
                     loss_function='RMSE',
                     eval_metric='RMSE',
                     random_seed=seed,
@@ -46,12 +52,12 @@ def train_catboost(args, model, data, logger, setting):
                 )
                 return p
             p = dict(
-                iterations=trial.suggest_int('iterations', 3500, 6000, step=500),
-                learning_rate=trial.suggest_float('learning_rate', 0.005, 0.08, log=True),
+                iterations=trial.suggest_int('iterations', 3500, 5000, step=500),
+                learning_rate=trial.suggest_float('learning_rate', 0.01, 0.08, log=True),
                 depth=trial.suggest_int('depth', 5, 7),
                 l2_leaf_reg=trial.suggest_float('l2_leaf_reg', 1e-2, 10.0, log=True),
                 bagging_temperature=trial.suggest_float('bagging_temperature', 0.0, 0.5),
-                random_strength=trial.suggest_float('random_strength', 0.0, 10.0),
+                random_strength=trial.suggest_float('random_strength', 5.0, 8.0),
                 border_count=trial.suggest_int('border_count', 32, 255),
                 loss_function='RMSE',
                 eval_metric='RMSE',
@@ -64,17 +70,11 @@ def train_catboost(args, model, data, logger, setting):
 
         def objective(trial):
             params = make_params(trial)
-            kf = KFold(n_splits=k_folds, shuffle=True, random_state=seed)
-            rmses = []
-            for tr_idx, va_idx in kf.split(X_all):
-                X_tr, X_va = X_all.iloc[tr_idx], X_all.iloc[va_idx]
-                y_tr, y_va = y_all.iloc[tr_idx], y_all.iloc[va_idx]
-                estimator = CatBoostRegressor(**params, cat_features=getattr(model, 'cat_features', None), verbose=500)
-                estimator.fit(X_tr, y_tr, eval_set=(X_va, y_va), use_best_model=True, early_stopping_rounds=100)
-                pred = estimator.predict(X_va)
-                rmse = np.sqrt(mean_squared_error(y_va, pred))
-                rmses.append(rmse)
-            return float(np.mean(rmses))
+            estimator = CatBoostRegressor(**params, cat_features=getattr(model, 'cat_features', None), verbose=500)
+            estimator.fit(X_train, y_train, eval_set=(X_valid, y_valid), use_best_model=True, early_stopping_rounds=100)
+            pred = estimator.predict(X_valid)
+            rmse = np.sqrt(mean_squared_error(y_valid, pred))
+            return rmse
 
         best_params = make_params(None)
         if use_optuna:
