@@ -14,6 +14,7 @@ from sklearn.model_selection import KFold
 
 
 def main(args, wandb=None):
+
     Setting.seed_everything(args.seed)
 
     ######################## LOAD DATA
@@ -27,10 +28,9 @@ def main(args, wandb=None):
     original_data = data_load_fn(args)
 
     ######################## MODE SELECTION
-    # 🔥 [수정] args 객체에 'kfold' 키가 없을 경우를 대비하여 None을 기본값으로 사용
+    # args 객체에 'kfold' 키가 없을 경우를 대비하여 None을 기본값으로 사용
     kfold_splits = getattr(args, "kfold", None)
 
-    # if args.kfold is not None and args.kfold > 1:  # ⬅️ 이 부분을 아래처럼 바꿉니다.
     if kfold_splits is not None and kfold_splits > 1:
 
         # ==========================================
@@ -38,15 +38,18 @@ def main(args, wandb=None):
         # ==========================================
         n_splits = kfold_splits
         kf = KFold(n_splits=n_splits, shuffle=True, random_state=args.seed)
+
+        # Soft Voting을 위한 Test Set 예측값 리스트
         fold_predicts_list = []
+
+        # [NEW] OOF 예측값을 담을 배열 초기화 (Train 데이터 길이만큼 0으로 채움)
+        train_df = original_data["train"]
+        oof_predictions = np.zeros(len(train_df))
 
         print(f">>> K-FOLD MODE ENABLED: {n_splits} Folds <<<")
 
         # 학습 모드일 때만 K-Fold Loop 진행
         if not args.predict:
-            train_df = original_data[
-                "train"
-            ]  # 데이터 구조 가정: {'train': df, 'test': df}
 
             for fold_idx, (train_idx, valid_idx) in enumerate(kf.split(train_df)):
                 print(
@@ -59,8 +62,6 @@ def main(args, wandb=None):
 
                 # 2. 메타데이터 포함하여 딕셔너리 구성 (original_data를 복사해서 시작)
                 target = "rating"
-
-                # 🔥 [핵심 수정] original_data의 모든 메타데이터(field_dims, field_names 등)를 복사해서 시작
                 input_data = original_data.copy()
 
                 # 3. K-Fold로 나눈 데이터로 train/valid 키를 덮어쓰거나 추가 (X, y 분리)
@@ -69,16 +70,12 @@ def main(args, wandb=None):
                 input_data["X_valid"] = fold_valid_data.drop(columns=[target])
                 input_data["y_valid"] = fold_valid_data[target]
 
-                # 'test'와 'field_dims', 'field_names' 등은 이미 original_data.copy()에 포함됨
-
                 # 4. DataLoader 생성
-                # current_data에는 이제 DataLoader 객체들이 담겨 나옴
+                # current_data: {'train': loader, 'valid': loader, 'test': loader ...}
                 current_data = data_loader_fn(args, input_data)
 
-                # 5. [안전장치] 모델 초기화에 필요한 메타데이터가 data_loader_fn을 거치며 사라졌을 경우 다시 복구
-                # (NCF, DeepFM 계열 모델은 field_dims와 field_names를 필요로 함)
+                # 5. [안전장치] 모델 초기화에 필요한 메타데이터 복구
                 for key in original_data:
-                    # 'train' DataFrame 자체는 필요 없으므로 건너뜀
                     if key not in current_data and key not in ["train"]:
                         current_data[key] = original_data[key]
 
@@ -107,20 +104,53 @@ def main(args, wandb=None):
                 )
                 model = train(args, model, current_data, logger, setting)
 
-                # 9. Predict (Inference)
+                # =========================================================
+                # [NEW] OOF Prediction Logic (Valid Set 예측)
+                # =========================================================
+                print(
+                    f"--------------- OOF PREDICT (Fold {fold_idx+1}) ---------------"
+                )
+
+                # 1) 기존 Test Loader를 잠시 백업 (키 이름 수정: 'test' -> 'test_dataloader')
+                real_test_loader = current_data["test_dataloader"]
+
+                # 2) Valid Loader를 Test 키에 할당 (키 이름 수정: 'valid' -> 'valid_dataloader' / 'test' -> 'test_dataloader')
+                current_data["test_dataloader"] = current_data["valid_dataloader"]
+
+                # 3) test 함수로 Valid Set 예측 수행 (test 함수가 'test_dataloader'를 사용한다고 가정)
+                # [주의: test 함수가 어떤 키를 쓰는지에 따라 인자를 조정해야 할 수도 있음]
+                valid_preds = test(args, model, current_data, setting)
+
+                # 4) Test Loader 원상복구
+                current_data["test_dataloader"] = real_test_loader
+
+                # 5) OOF 배열에 예측값 저장
+                oof_predictions[valid_idx] = valid_preds
+                print(
+                    f" -> Fold {fold_idx+1} OOF predictions saved. (Size: {len(valid_preds)})"
+                )
+
+                # =========================================================
+                # 9. Predict (Inference on Real Test Set)
+                # =========================================================
                 print(
                     f"--------------- {args.model} PREDICT (Fold {fold_idx+1}) ---------------"
                 )
+                # 진짜 Test Set 예측
                 predicts = test(args, model, current_data, setting)
                 fold_predicts_list.append(predicts)
 
-            # Soft Voting
+            # -----------------------------------------------------------
+            # Loop 종료 후: Soft Voting & OOF Save
+            # -----------------------------------------------------------
+
+            # 1) Soft Voting (Test Set)
             print(
                 f"--------------- Soft Voting Ensemble ({n_splits} Folds) ---------------"
             )
             avg_predicts = np.mean(fold_predicts_list, axis=0)
 
-            # Save
+            # 2) Save Final Submission
             print(f"--------------- SAVE {args.model} ENSEMBLE PREDICT ---------------")
             submission = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
             submission["rating"] = avg_predicts
@@ -129,6 +159,17 @@ def main(args, wandb=None):
             filename = filename.replace(".csv", f"_kfold_{n_splits}.csv")
             print(f"Save Predict: {filename}")
             submission.to_csv(filename, index=False)
+
+            # 3) [NEW] Save OOF Predictions
+            print(f"--------------- SAVE OOF PREDICT ---------------")
+            # 원본 Train 데이터에 예측값을 붙여서 저장 (rating: 실제값, predict: 예측값)
+            # 순서는 원본 train_df 순서 그대로 유지됨 (oof_predictions를 인덱스 맞춰서 채웠으므로)
+            oof_df = train_df.copy()
+            oof_df["predict"] = oof_predictions
+
+            oof_filename = filename.replace(".csv", "_OOF.csv")
+            print(f"Save OOF Predict: {oof_filename}")
+            oof_df.to_csv(oof_filename, index=False)
 
         else:
             # 예측 모드인데 K-Fold를 킨 경우 (보통 5개 모델 로드해야 해서 복잡함 -> 경고 후 단일 실행 추천)
