@@ -110,9 +110,6 @@ class Image_DeepFM(nn.Module):
             output_layer=True,
         )
 
-        # ⬇️ 이 줄을 추가
-        self.sigmoid = nn.Sigmoid()
-
         self.final_fc = nn.Linear(2, 1)
 
     def forward(self, x):
@@ -156,13 +153,7 @@ class Image_DeepFM(nn.Module):
         combined_output = torch.stack([output_fm, output_dnn], dim=1)  # (batch_size, 2)
         raw_output = self.final_fc(combined_output).squeeze(1)  # (batch_size,)
 
-        # Sigmoid와 스케일링 로직은 그대로 유지
-        output_0_1 = self.sigmoid(raw_output)
-        min_rating = 1.0
-        max_rating = 10.0
-        final_output = output_0_1 * (max_rating - min_rating) + min_rating
-
-        return final_output
+        return raw_output
 
 
 class ResNet_DeepFM(nn.Module):
