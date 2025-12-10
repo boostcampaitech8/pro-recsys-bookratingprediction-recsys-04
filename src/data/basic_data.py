@@ -19,19 +19,8 @@ def basic_data_load(args):
     ######################## DATA LOAD
     train_df = pd.read_csv(args.dataset.data_path + "train_ratings.csv")
     test_df = pd.read_csv(args.dataset.data_path + "test_ratings.csv")
-    # submission.csv 파일 경로 확인
-    try:
-        sub = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
-    except FileNotFoundError:
-        print(
-            f"Warning: File not found at {args.dataset.data_path}sample_submission.csv"
-        )
-        print(
-            "Using fallback path: /data/ephemeral/home/sojin/data/sample_submission.csv"
-        )
-        sub = pd.read_csv(
-            "/data/ephemeral/home/sojin/data/sample_submission.csv"  # TODO: 본인 경로대로 수정
-        )
+    # TODO: submission.csv 파일 경로 확인
+    sub = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
 
     # 처리를 위해 잠시 합칩니다 (나중에 분리할 때 원본 보존을 위해 copy 사용 추천하지만, 여기선 흐름상 진행)
     all_df = pd.concat([train_df, test_df], axis=0)

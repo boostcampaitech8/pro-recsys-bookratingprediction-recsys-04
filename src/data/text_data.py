@@ -268,19 +268,8 @@ def text_data_load(args):
     books = pd.read_csv(args.dataset.data_path + "books.csv")
     train = pd.read_csv(args.dataset.data_path + "train_ratings.csv")
     test = pd.read_csv(args.dataset.data_path + "test_ratings.csv")
-    # submission.csv 파일 경로 확인
-    try:
-        sub = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
-    except FileNotFoundError:
-        print(
-            f"Warning: File not found at {args.dataset.data_path}sample_submission.csv"
-        )
-        print(
-            "Using fallback path: /data/ephemeral/home/sojin/data/sample_submission.csv"
-        )
-        sub = pd.read_csv(
-            "/data/ephemeral/home/sojin/data/sample_submission.csv"  # TODO: 본인 경로대로 수정
-        )
+    # TODO :submission.csv 파일 경로 확인
+    sub = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_args[args.model].pretrained_model
