@@ -1,0 +1,11 @@
+/data
+.ipynb_checkpoints/
+.github/
+._*
+/saved
+wandb/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
