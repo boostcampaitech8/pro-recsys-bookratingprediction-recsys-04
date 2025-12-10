@@ -6,7 +6,7 @@ import pandas as pd
 # ------------------------------------
 model = CatBoostRegressor()
 model.load_model(
-    "/data/ephemeral/home/min/pro-recsys-bookratingprediction-recsys-04/saved/checkpoint/20251209_170446_CatBoost_best.cbm"
+    "/data/ephemeral/home/min/pro-recsys-bookratingprediction-recsys-04/saved/checkpoint/20251210_055518_CatBoost_best.cbm"
 )
 
 # ------------------------------------

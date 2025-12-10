@@ -98,9 +98,9 @@ model_args:     # model에 해당하는 파라미터만 실질적으로 사용�
         dropout: 0.2        # MLP_Base에서 드롭아웃 비율
     CatBoost:
         datatype: catboost       # basic, context 가능 (CatBoost는 범주형 변수에 특화)
-        iterations: 10000        # 부스팅 반복 횟수 (트리 개수)
+        iterations: 15000        # 부스팅 반복 횟수 (트리 개수)
         learning_rate: 0.03     # 학습률
-        depth: 6               # 트리 깊이
+        depth: 8             # 트리 깊이
         task_type: GPU          # GPU 또는 CPU (GPU 사용 시 학습 속도 향상)
         devices: '0'            # 사용할 GPU 디바이스 번호
         verbose: True          # 학습 과정 출력 여부
