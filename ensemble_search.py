@@ -9,9 +9,9 @@ from scipy.optimize import minimize
 # =================================================================
 
 OOF_FILE_LIST = [
-    "../saved/submit/20251210_122552_NCF_kfold_10_OOF.csv",
-    "../saved/submit/20251210_120329_Image_DeepFM_kfold_10_OOF.csv",
-    "../saved/submit/20251210_121449_FM_kfold_10_OOF.csv",
+    "../saved/submit/20251211_032012_CatBoost_kfold_5_OOF.csv",
+    "../saved/submit/20251211_043128_MF_kfold_5_OOF.csv",
+    "../saved/submit/20251211_082318_DeepFM_kfold_5_OOF.csv",
     # 여기에 계속 추가 가능...
 ]
 
@@ -33,32 +33,52 @@ def load_oof_predictions(file_paths):
         try:
             df = pd.read_csv(path)
 
-            # 첫 번째 파일에서 정답 라벨(y_true) 가져오기
+            # ======================
+            # 🔍 [추가] OOF 검증 코드
+            # ======================
+            print(f"\n=== 체크: {path} ===")
+
+            # 1. row 수 출력
+            print(" - Row 수:", len(df))
+
+            # 2. predict 컬럼이 존재하는지 확인
+            if PRED_COL not in df.columns:
+                print(f" ❌ ERROR: '{PRED_COL}' 컬럼이 존재하지 않습니다!")
+                return None, None
+
+            # 3. predict 값의 variety 확인
+            print(" - predict unique 개수:", df[PRED_COL].nunique())
+            if df[PRED_COL].nunique() == 1:
+                print(" ⚠️ Warning: predict 값이 전부 동일합니다. (고장 가능성)")
+
+            # 4. RMSE sanity check
+            tmp_rmse = sqrt(mean_squared_error(df[TRUE_LABEL_COL], df[PRED_COL]))
+            print(f" - 개별 RMSE (sanity): {tmp_rmse:.5f}")
+
+            # ======================
+            # 원래 로직 진행
+            # ======================
+
             if y_true is None:
                 y_true = df[TRUE_LABEL_COL].values
             else:
-                # 정합성 체크: 정답 라벨이 모두 같은 순서인지 확인
                 current_true = df[TRUE_LABEL_COL].values
                 if not np.allclose(y_true, current_true, rtol=1e-5):
                     print(
                         f"⚠️ Warning: {path}의 정답 라벨 순서가 첫 번째 파일과 다릅니다!"
                     )
-                    print(
-                        "   (정렬이 섞였을 수 있습니다. user_id 등으로 정렬을 맞춰주세요.)"
-                    )
+                    print("   (정렬 mismatch 가능성 매우 높음)")
 
             preds_matrix.append(df[PRED_COL].values)
 
-            # 개별 모델 RMSE 출력
             rmse = sqrt(mean_squared_error(y_true, df[PRED_COL].values))
-            print(f"   [{i}] {path.split('/')[-1]} -> RMSE: {rmse:.5f}")
+            print(f"   [{i}] 파일 RMSE: {rmse:.5f}")
 
         except Exception as e:
             print(f"❌ Error loading {path}: {e}")
             return None, None
 
     return np.array(preds_matrix).T, y_true
-    # 반환 형태: (샘플 수, 모델 수), (샘플 수,)
 
 
 # =================================================================
