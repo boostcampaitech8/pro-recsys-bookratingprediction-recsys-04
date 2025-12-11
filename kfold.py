@@ -29,7 +29,7 @@ def main(args, wandb=None):
 
     ######################## MODE SELECTION
     # args 객체에 'kfold' 키가 없을 경우를 대비하여 None을 기본값으로 사용
-    kfold_splits = getattr(args, "kfold", None)
+    kfold_splits = getattr(args, "kfold", 5)
 
     if kfold_splits is not None and kfold_splits > 1:
 
@@ -274,6 +274,7 @@ if __name__ == "__main__":
         "--m",
         type=str,
         choices=[
+            "MF",
             "FM",
             "FFM",
             "DeepFM",
