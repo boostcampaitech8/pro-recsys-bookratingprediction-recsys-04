@@ -72,7 +72,7 @@ model_args:     # model에 해당하는 파라미터만 실질적으로 사용�
         cnn_dropout: 0.2            # CNN_Base에서 드롭아웃 비율
     Image_DeepFM:
         datatype: image     # basic, context, image, text 중 image 가능
-        context: True       # context 정보 사용할 것인지 선택
+        context: True       # 컨텍스트 피처 포함 여부
         embed_dim: 16       # sparse 벡터 및 이미지 벡터를 임베딩할 차원
         img_size: 64        # 이미지 전처리를 통해 조정할 이미지 크기 (64 -> 3x64x64)
         kernel_size: 3              # CNN_Base에서 사용할 각 레이어의 커널 사이즈
@@ -91,6 +91,14 @@ model_args:     # model에 해당하는 파라미터만 실질적으로 사용�
         mlp_dims: [16, 32]          # MLP_Base의 히든 레이어 차원
         batchnorm: True        # MLP_Base에서 배치 정규화 사용 여부
         dropout: 0.2            # MLP_Base에서 드롭아웃 비율
+    CLIP_DeepFM:
+        datatype: image
+        context: True          # 컨텍스트 피처 포함 여부 (image_data.py에서 제어됨)
+        embed_dim: 16
+        img_size: 224          # CLIP 권장 입력 크기
+        mlp_dims: [16, 32]
+        batchnorm: True
+        dropout: 0.2
     Text_FM:
         datatype: text      # basic, context, image, text 중 text 가능
         vector_create: False    # True: BERT를 통해 임베딩 벡터 생성 / False: 기존에 만든 벡터 사용
@@ -108,21 +116,19 @@ model_args:     # model에 해당하는 파라미터만 실질적으로 사용�
         dropout: 0.2            # MLP_Base에서 드롭아웃 비율
     CatBoost:
         datatype: context         # basic, context 가능 (CatBoost는 범주형 변수에 특화)
-        # vector_create: False
-        # pretrained_model: 'sentence-transformers/all-mpnet-base-v2'   # 텍스트 임베딩에 사용할 사전학습 모델
-        iterations: 5000        # 부스팅 반복 횟수 (트리 개수)
-        learning_rate: 0.046155921683809414     # 학습률
-        depth: 6                # 트리 깊이
-        l2_leaf_reg: 0.010708466885192214       # 가중치 규제
-        bagging_temperature: 0.4275249150966166 # bagging 가중치
-        random_strength: 5.291418680449523      # exploration 확률
-        border_count: 225                       # 수치형 변수 범주화하는 구간 개수
+        iterations: 5500        # 부스팅 반복 횟수 (트리 개수)
+        learning_rate: 0.023699520299640786     # 학습률
+        depth: 9                # 트리 깊이
+        l2_leaf_reg: 0.020339468944185632       # 가중치 규제
+        bagging_temperature: 0.16707664282105886 # bagging 가중치
+        random_strength: 5.695250973552749      # exploration 확률
+        border_count: 133                       # 수치형 변수 범주화하는 구간 개수
         task_type: GPU          # GPU 또는 CPU (GPU 사용 시 학습 속도 향상)
         devices: '0'            # 사용할 GPU 디바이스 번호
         verbose: True          # 학습 과정 출력 여부
-        use_optuna: True
+        use_optuna: False
         optuna_n_trials: 40
-        k_folds: 10
+        k_folds: 5
     XGBoost:
         datatype: context
         n_estimators: 3000
