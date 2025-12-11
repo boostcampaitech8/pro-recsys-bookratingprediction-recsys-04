@@ -5,6 +5,7 @@ from torchvision.transforms import v2
 import torch
 from torch.utils.data import DataLoader, Dataset
 from .basic_data import basic_data_split
+from .context_data import process_context_data
 
 
 class Image_Dataset(Dataset):
@@ -72,6 +73,39 @@ def image_vector(path, img_size):
     return transform(img).numpy()
 
 
+def clip_image_vector(path, img_size):
+    """
+    CLIP 모델용 전처리로 이미지를 벡터화합니다.
+
+    Parameters
+    ----------
+    path : str
+        이미지 경로
+    img_size : int
+        리사이즈 크기 (보통 224)
+
+    Returns
+    -------
+    np.ndarray
+        CLIP 정규화를 적용한 이미지 텐서 (C,H,W) numpy
+    """
+    img = Image.open(path)
+    # CLIP mean/std
+    clip_mean = [0.48145466, 0.4578275, 0.40821073]
+    clip_std = [0.26862954, 0.26130258, 0.27577711]
+    transform = v2.Compose(
+        [
+            v2.Lambda(lambda x: x.convert("RGB") if x.mode != "RGB" else x),
+            v2.Resize((img_size, img_size)),
+            v2.ToImage(),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize(mean=clip_mean, std=clip_std),
+        ]
+    )
+
+    return transform(img).numpy()
+
+
 def process_img_data(books, args):
     """
     Parameters
@@ -87,10 +121,14 @@ def process_img_data(books, args):
     books_ = books.copy()
     books_["img_path"] = books_["img_path"].apply(lambda x: f"data/{x}")
     img_vecs = []
+    # 모델에 따라 적절한 전처리 함수 선택
+    use_clip = getattr(args, 'model', None) == 'CLIP_DeepFM'
+    img_size = args.model_args[args.model].img_size
     for idx in tqdm(books_.index):
-        img_vec = image_vector(
-            books_.loc[idx, "img_path"], args.model_args[args.model].img_size
-        )
+        if use_clip:
+            img_vec = clip_image_vector(books_.loc[idx, "img_path"], img_size)
+        else:
+            img_vec = image_vector(books_.loc[idx, "img_path"], img_size)
         img_vecs.append(img_vec)
 
     books_["img_vector"] = img_vecs
@@ -112,34 +150,61 @@ def image_data_load(args):
     data : Dict
         학습 및 테스트 데이터가 담긴 사전 형식의 데이터를 반환합니다.
     """
-    users = pd.read_csv(
-        args.dataset.data_path + "users.csv"
-    )  # 베이스라인 코드에서는 사실상 사용되지 않음
-    books = pd.read_csv(args.dataset.data_path + "books.csv")
+    users = pd.read_csv(args.dataset.data_path + "users.csv")
+    books = pd.read_csv(args.dataset.data_path + "data_processed/books.csv")
     train = pd.read_csv(args.dataset.data_path + "train_ratings.csv")
     test = pd.read_csv(args.dataset.data_path + "test_ratings.csv")
     sub = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
 
-    # 이미지를 벡터화하여 데이터 프레임에 추가
-    books_ = process_img_data(books, args)
+    # 컨텍스트 사용 여부에 따라 처리 분기
+    context_flag = getattr(args.model_args[args.model], "context", False)
+    if context_flag:
+        users_, books = process_context_data(users, books)
 
-    # 유저 및 책 정보를 합쳐서 데이터 프레임 생성 (단, 베이스라인에서는 user_id, isbn, img_vector만 사용함)
-    # 사용할 컬럼을 user_features와 book_features에 정의합니다. (단, 모두 범주형 데이터로 가정)
-    user_features = []
-    book_features = []
+        # 이미지를 벡터화하여 데이터 프레임에 추가
+        books_ = process_img_data(books, args)
+
+        # 유저 및 책 정보를 합쳐서 데이터 프레임 생성 (단, 베이스라인에서는 user_id, isbn, img_vector만 사용함)
+        # 사용할 컬럼을 user_features와 book_features에 정의합니다. (단, 모두 범주형 데이터로 가정)
+        user_features = [
+            "user_id",
+            "age_range",
+            "location_country",
+            "location_state",
+            "location_city",
+        ]
+        book_features = [
+            "isbn",
+            "book_title",
+            "book_author",
+            "publisher",
+            "language",
+            "category_cluster",
+            "category_missing_flag",
+            "publication_range",
+            "summary_cluster",
+            "title_cluster",
+        ]
+    else:
+        # 컨텍스트 미사용: 전처리/피처 제외, 이미지 벡터만 사용
+        users_ = users
+        books_ = process_img_data(books, args)
+        
+        user_features = []
+        book_features = []
+
     sparse_cols = ["user_id", "isbn"] + list(
         set(user_features + book_features) - {"user_id", "isbn"}
     )
 
     train_df = train.merge(books_, on="isbn", how="left").merge(
-        users, on="user_id", how="left"
+        users_, on="user_id", how="left"
     )[sparse_cols + ["img_vector", "rating"]]
     test_df = test.merge(books_, on="isbn", how="left").merge(
-        users, on="user_id", how="left"
+        users_, on="user_id", how="left"
     )[sparse_cols + ["img_vector"]]
     all_df = pd.concat([train_df, test_df], axis=0)
 
-    # feature_cols의 데이터만 라벨 인코딩하고 인덱스 정보를 저장
     # feature_cols의 데이터만 라벨 인코딩하고 인덱스 정보를 저장
     label2idx, idx2label = {}, {}
     for col in sparse_cols:

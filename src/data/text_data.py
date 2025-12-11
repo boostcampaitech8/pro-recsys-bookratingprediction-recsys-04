@@ -7,6 +7,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoTokenizer, AutoModel
 from .basic_data import basic_data_split
+from .context_data import process_context_data
 
 
 def text_preprocessing(summary):
@@ -265,7 +266,7 @@ def text_data_load(args):
         학습 및 테스트 데이터가 담긴 사전 형식의 데이터를 반환합니다.
     """
     users = pd.read_csv(args.dataset.data_path + "users.csv")
-    books = pd.read_csv(args.dataset.data_path + "books.csv")
+    books = pd.read_csv(args.dataset.data_path + "data_processed/books.csv")
     train = pd.read_csv(args.dataset.data_path + "train_ratings.csv")
     test = pd.read_csv(args.dataset.data_path + "test_ratings.csv")
     sub = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
@@ -277,14 +278,38 @@ def text_data_load(args):
         device=args.device
     )
     model.eval()
+
+    users, books = process_context_data(users, books)
+
     users_, books_ = process_text_data(
         train, users, books, tokenizer, model, args.model_args[args.model].vector_create
     )
 
     # 유저 및 책 정보를 합쳐서 데이터 프레임 생성 (단, 베이스라인에서는 user_id, isbn, user_summary_merge_vector, book_summary_vector만 사용함)
     # 사용할 컬럼을 user_features와 book_features에 정의합니다. (단, 모두 범주형 데이터로 가정)
-    user_features = []
-    book_features = []
+    user_features = [
+        "user_id",
+        "age_range",
+        "location_country",
+        "location_state",
+        "location_city",
+    ]
+    book_features = [
+        "isbn",
+        "book_title",
+        "book_author",
+        "publisher",
+        "language",
+        "category_cluster",
+        "category_missing_flag",
+        "title_norm", 
+        "author_norm", 
+        "canonical_id",
+        "publication_range",
+        "summary_cluster",
+        "title_cluster",
+    ]
+
     sparse_cols = ["user_id", "isbn"] + list(
         set(user_features + book_features) - {"user_id", "isbn"}
     )

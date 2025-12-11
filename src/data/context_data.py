@@ -75,11 +75,13 @@ def process_context_data(users, books):
         lambda x: str2list(x)[0] if not pd.isna(x) else np.nan
     )
     books_["language"] = books_["language"].fillna(books_["language"].mode()[0])
-    books_["publication_range"] = books_["year_of_publication"].apply(
+    books_["publication_range"] = books_["year_of_publication_clipped"].apply(
         lambda x: x // 10 * 10
     )  # 1990년대, 2000년대, 2010년대, ...
 
     users_["age"] = users_["age"].fillna(users_["age"].mode()[0])
+    users_["age"] = users_["age"].clip(19, 57)
+
     users_["age_range"] = users_["age"].apply(
         lambda x: x // 10 * 10
     )  # 10대, 20대, 30대, ...
@@ -139,7 +141,7 @@ def context_data_load(args):
 
     ######################## DATA LOAD
     users = pd.read_csv(args.dataset.data_path + "users.csv")
-    books = pd.read_csv(args.dataset.data_path + "books_with_categories.csv")
+    books = pd.read_csv(args.dataset.data_path + "data_processed/books.csv")
     train = pd.read_csv(args.dataset.data_path + "train_ratings.csv")
     test = pd.read_csv(args.dataset.data_path + "test_ratings.csv")
     sub = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
@@ -163,8 +165,14 @@ def context_data_load(args):
         "book_author",
         "publisher",
         "language",
-        "category",
+        "category_cluster",
+        "category_missing_flag",
+        "title_norm", 
+        "author_norm", 
+        "canonical_id",
         "publication_range",
+        "summary_cluster",
+        "title_cluster",
     ]
 
     # CatBoost일 때는 age_range, publication_range 제외
@@ -181,8 +189,12 @@ def context_data_load(args):
             "book_author",
             "publisher",
             "language",
-            "category",
+            "category_cluster",
+            "summary_cluster",
+            "category_missing_flag",
+            "title_cluster",
         ]
+
     sparse_cols = (
         ["user_id", "isbn"]
         + list(set(user_features + book_features) - {"user_id", "isbn"})
@@ -190,7 +202,16 @@ def context_data_load(args):
         else user_features + book_features
     )
 
-    numeric_cols = ["age", "year_of_publication"]
+    numeric_cols = [
+        "age",
+        "age_of_book",
+        "year_of_publication_clipped",
+        "publisher_book_count",
+        "publisher_review_count",
+        "author_book_count",
+        "author_review_count",
+        "title_count",
+    ]
 
     # 선택한 컬럼만 추출하여 데이터 조인
     train_df = train.merge(users_, on="user_id", how="left").merge(

@@ -72,6 +72,7 @@ model_args:     # model에 해당하는 파라미터만 실질적으로 사용�
         cnn_dropout: 0.2            # CNN_Base에서 드롭아웃 비율
     Image_DeepFM:
         datatype: image     # basic, context, image, text 중 image 가능
+        context: True       # 컨텍스트 피처 포함 여부
         embed_dim: 16       # sparse 벡터 및 이미지 벡터를 임베딩할 차원
         img_size: 64        # 이미지 전처리를 통해 조정할 이미지 크기 (64 -> 3x64x64)
         kernel_size: 3              # CNN_Base에서 사용할 각 레이어의 커널 사이즈
@@ -90,6 +91,14 @@ model_args:     # model에 해당하는 파라미터만 실질적으로 사용�
         mlp_dims: [16, 32]          # MLP_Base의 히든 레이어 차원
         batchnorm: True        # MLP_Base에서 배치 정규화 사용 여부
         dropout: 0.2            # MLP_Base에서 드롭아웃 비율
+    CLIP_DeepFM:
+        datatype: image
+        context: True          # 컨텍스트 피처 포함 여부 (image_data.py에서 제어됨)
+        embed_dim: 16
+        img_size: 224          # CLIP 권장 입력 크기
+        mlp_dims: [16, 32]
+        batchnorm: True
+        dropout: 0.2
     Text_FM:
         datatype: text      # basic, context, image, text 중 text 가능
         vector_create: False    # True: BERT를 통해 임베딩 벡터 생성 / False: 기존에 만든 벡터 사용
@@ -107,15 +116,17 @@ model_args:     # model에 해당하는 파라미터만 실질적으로 사용�
         dropout: 0.2            # MLP_Base에서 드롭아웃 비율
     CatBoost:
         datatype: context         # basic, context 가능 (CatBoost는 범주형 변수에 특화)
-        # vector_create: False
-        # pretrained_model: 'sentence-transformers/all-mpnet-base-v2'   # 텍스트 임베딩에 사용할 사전학습 모델
-        iterations: 5000        # 부스팅 반복 횟수 (트리 개수)
-        learning_rate: 0.03     # 학습률
-        depth: 6                # 트리 깊이
+        iterations: 5500        # 부스팅 반복 횟수 (트리 개수)
+        learning_rate: 0.023699520299640786     # 학습률
+        depth: 9                # 트리 깊이
+        l2_leaf_reg: 0.020339468944185632       # 가중치 규제
+        bagging_temperature: 0.16707664282105886 # bagging 가중치
+        random_strength: 5.695250973552749      # exploration 확률
+        border_count: 133                       # 수치형 변수 범주화하는 구간 개수
         task_type: GPU          # GPU 또는 CPU (GPU 사용 시 학습 속도 향상)
         devices: '0'            # 사용할 GPU 디바이스 번호
         verbose: True          # 학습 과정 출력 여부
-        use_optuna: true
+        use_optuna: False
         optuna_n_trials: 40
         k_folds: 5
     XGBoost:
@@ -137,7 +148,7 @@ model_args:     # model에 해당하는 파라미터만 실질적으로 사용�
 
 dataset:
     data_path: /data/ephemeral/home/data/    # 데이터셋 경로
-    valid_ratio: 0.2    # Train / Vaildation split
+    valid_ratio: 0.1    # Train / Vaildation split
 
 dataloader:
     batch_size: 1024    # 배치 사이즈
@@ -145,16 +156,16 @@ dataloader:
     num_workers: 0      # 멀티프로세서 수. 0: 메인프로세서만 사용
 
 optimizer:
-    type: Adam      # 사용가능한 optimizer: torch.optim.Optimizer 클래스 (https://pytorch.org/docs/stable/optim.html#algorithms)
+    type: AdamW      # 사용가능한 optimizer: torch.optim.Optimizer 클래스 (https://pytorch.org/docs/stable/optim.html#algorithms)
     args:           # 사용하고자 하는 클래스의 파라미터를 참고하여 추가해주시면 되며, 관계가 없는 파라미터는 무시됩니다.
-        lr: 5e-3           # 예) 모든 옵티마이저에서 사용되는 학습률
+        lr: 1e-4           # 예) 모든 옵티마이저에서 사용되는 학습률
         weight_decay: 1e-5  # 예) Adam 등 / L2 정규화 가중치
         amsgrad: False      # 예) Adam 등 / amsgrad 사용 여부
 
 loss: RMSELoss          # 직접 정의한 loss 클래스 또는 torch.nn.Module 클래스 (https://pytorch.org/docs/stable/nn.html#loss-functions)
 
 lr_scheduler:
-    use: True                  # True: 사용 / False: 사용하지 않음 (단, valid_ratio가 0일 경우 validation set이 없어 사용 불가)
+    use: True                 # True: 사용 / False: 사용하지 않음 (단, valid_ratio가 0일 경우 validation set이 없어 사용 불가)
     type: ReduceLROnPlateau  # 사용가능한 lr_scheduler: torch.optim.lr_scheduler 클래스 (https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate)
     args:                       # 사용하고자 하는 클래스의 파라미터를 참고하여 추가해주시면 되며, 관계가 없는 파라미터는 무시됩니다.
         mode: 'min'             # 예) ReduceLROnPlateau / 'min' 또는 'max'
@@ -171,6 +182,6 @@ train:
     ckpt_dir: saved/checkpoint    # 모델 저장 경로
     submit_dir: saved/submit            # 예측 저장 경로
     save_best_model: True               # True: val_loss가 최소인 모델 저장 / False: 모든 모델 저장
-    # early_stopping_patience: 5          # n회 동안 val score가 개선되지 않을 시 early stop
+    early_stopping_patience: 5          # n회 동안 val score가 개선되지 않을 시 early stop
     resume: False                               # 이어서 학습할 경우 True
     resume_path: saved/checkpoint/FM_best.pt    # 이어서 학습할 모델 경로
