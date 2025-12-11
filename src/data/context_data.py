@@ -143,11 +143,16 @@ def context_data_load(args):
     # books = pd.read_csv(args.dataset.data_path + "books_with_categories.csv")
     books = pd.read_csv("/data/ephemeral/home/sojin/data/books_with_categories.csv")
 
-    train = pd.read_csv(args.dataset.data_path + "train_ratings.csv")
-    test = pd.read_csv(args.dataset.data_path + "test_ratings.csv")
-    # TODO :submission.csv 파일 경로 확인
-    sub = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
+    train = pd.read_csv(
+        args.dataset.data_path + "train_ratings_with_clip.csv"
+    )  # CLIP 적용
+    test = pd.read_csv(
+        args.dataset.data_path + "test_ratings_with_clip.csv"
+    )  # CLIP 적용
 
+    # TODO :submission.csv 파일 경로 확인
+    # sub = pd.read_csv(args.dataset.data_path + "sample_submission.csv")
+    sub = "/data/ephemeral/home/sojin/data/sample_submission.csv"
     users_, books_ = process_context_data(users, books)
 
     # 유저 및 책 정보를 합쳐서 데이터 프레임 생성
