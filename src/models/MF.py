@@ -24,14 +24,13 @@ class GeneralMatrixFactorizeModel(nn.Module):
         self.fc = nn.Linear(args.embed_dim, 1)
 
 
-
     def forward(self, x):
         user_idx = x[:, self.user_field_idx].long()
         item_idx = x[:, self.item_field_idx].long()
         
-        # bias 항 추가
-        b_u = self.user_bias(user_idx).squeeze()
-        b_i = self.item_bias(item_idx).squeeze()
+        # # bias 항 추가
+        b_u = self.user_bias(user_idx).view(-1)
+        b_i = self.item_bias(item_idx).view(-1)
         
         x = self.embedding(x)
         user_x = x[:, self.user_field_idx].squeeze(1)
@@ -39,8 +38,10 @@ class GeneralMatrixFactorizeModel(nn.Module):
     
         
         gmf = user_x * item_x
-        x = self.fc(gmf).squeeze(1)
+        # gmf = self.dropout(gmf)
+        
+        out = self.fc(gmf).view(-1)
         
         # bias 추가 하여 예측
-        x = x + b_u + b_i
-        return x
+        out = out + b_u + b_i
+        return out

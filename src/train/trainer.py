@@ -12,6 +12,7 @@ METRIC_NAMES = {
     "MAELoss": "MAE",
     "VAELoss": "VAE",
     "SparseRMSELoss": "RMSE",   # 이 RMSE는 VAE에만 사용하세요!
+    "CrossEntropy" : "CrossEntropy"
 }
 
 def train(args, model, dataloader, logger, setting):
@@ -26,11 +27,9 @@ def train(args, model, dataloader, logger, setting):
     )
 
     trainable_params = filter(lambda p: p.requires_grad, model.parameters())
-    optimizer = getattr(optimizer_module, args.optimizer.type)(
-        trainable_params, **args.optimizer.args)
     
     # MF인경우 모델 옵티마이저 수정
-    if args.model == 'MF':
+    if args.model in ['MF', 'NCF_B', 'MF_SVD', 'Dual_GMF']:
         ########## 추가 실험 ##############
         # 1. Config 딕셔너리를 복사합니다. (원본 args 훼손 방지)
         optimizer_args = args.optimizer.args.copy()
@@ -38,9 +37,11 @@ def train(args, model, dataloader, logger, setting):
         # 2. 'weight_decay' 값을 뽑아냅니다. (딕셔너리에서는 삭제됨)
         # 만약 config에 weight_decay가 없으면 기본값 0.0을 씁니다.
         weight_decay = optimizer_args.pop('weight_decay', 0.0)
+        bias_weight_decay = optimizer_args.pop('bias_weight_decay', 0.0)
         
         decay_params = []
         no_decay_params = []
+        bias_decay_params = []
 
         # 3. 모델의 파라미터 이름을 확인하며 그룹 나누기
         for name, param in model.named_parameters():
@@ -49,17 +50,23 @@ def train(args, model, dataloader, logger, setting):
                 
             # [핵심] 이름이 .bias로 끝나면 (Global Bias, Layer Bias) -> 규제 제외
             # 주의: User Bias는 임베딩이므로 이름이 'weight'라 여기 걸리지 않음 (규제 적용됨 O)
-            if name.endswith('.bias'):
+            if name.endswith('.bias') or 'bn' in name or 'norm' in name:
+                print(f"🚫 No Decay 적용: {name}") # 확인용 출력
                 no_decay_params.append(param)
+            elif 'user_bias' in name or 'item_bias' in name or 'feature_bias' in name:
+                print(f"  Weak Weight Decay {bias_weight_decay} 적용: {name}") # 확인용 출력
+                bias_decay_params.append(param)
             else:
+                print(f"  Strong Weight Decay {weight_decay} 적용: {name}") # 확인용 출력
                 decay_params.append(param)
 
         # 4. 그룹별 설정 생성
         param_groups = [
-            # 그룹 A: Config에 적힌 weight_decay (1e-4) 적용
+            # 그룹 A: Config에 적힌 weight_decay 적용
             {'params': decay_params, 'weight_decay': weight_decay},
+            # 그룹 B: 매우 약한 decay 적용
+            {'params': bias_decay_params, 'weight_decay': bias_weight_decay},
             
-            # 그룹 B: Weight Decay 0.0 강제 적용
             {'params': no_decay_params, 'weight_decay': 0.0}
         ]
 
@@ -70,6 +77,9 @@ def train(args, model, dataloader, logger, setting):
             param_groups, **optimizer_args
         )
         ############ 추가 실험 ############
+    else:
+        optimizer = getattr(optimizer_module, args.optimizer.type)(
+        trainable_params, **args.optimizer.args)
 
     if args.lr_scheduler.use:
         args.lr_scheduler.args = {
@@ -117,16 +127,24 @@ def train(args, model, dataloader, logger, setting):
                 ], data["rating"].to(args.device)
             elif args.model_args[args.model].datatype == "sparse":
                 x = y = data.to(args.device)
+            elif args.model_args[args.model].datatype == "implicit":
+                x = data[0].to(args.device)
+                y = data[1].to(args.device)
+                # history = data[2].to(args.device)
             else:
                 x, y = data[0].to(args.device), data[1].to(args.device)
 
+            # forward & loss 계산
             if args.model_args[args.model].datatype == "sparse":
                 y_hat, mu, logvar = model(x)
                 loss = loss_fn(y_hat * torch.sign(y), y.float(), mu, logvar)
-
+            elif args.model_args[args.model].datatype == 'implicit':
+                y_hat = model(x)#, history)
+                loss = loss_fn(y_hat, y.float())
             else:
                 y_hat = model(x)
                 loss = loss_fn(y_hat, y.float())
+            
 
             optimizer.zero_grad()
             loss.backward()
@@ -253,9 +271,19 @@ def valid(args, model, dataloader, loss_fn):
                         data["user_summary_vector"].to(args.device),
                         data["book_summary_vector"].to(args.device),
                     ], data["rating"].to(args.device)
+                elif args.model_args[args.model].datatype == "implicit":
+                    x = data[0].to(args.device)
+                    y = data[1].to(args.device)
+                    #history = data[2].to(args.device)
                 else:
                     x, y = data[0].to(args.device), data[1].to(args.device)
-                y_hat = model(x)
+                    y = data[1].to(args.device)
+                
+                if args.model_args[args.model].datatype == "implicit":
+                    y_hat = model(x)#, history)
+                else:
+                    y_hat = model(x)
+                
                 loss = loss_fn(y_hat, y.float())
                 total_loss += loss.item()
 
@@ -310,9 +338,16 @@ def test(args, model, data, setting, checkpoint=None):
                         data["user_summary_vector"].to(args.device),
                         data["book_summary_vector"].to(args.device),
                     ]
+                elif args.model_args[args.model].datatype == "implicit":
+                    x = data[0].to(args.device)
+                    #history = data[2].to(args.device)
                 else:
                     x = data[0].to(args.device)
-                y_hat = model(x)
+                
+                if args.model_args[args.model].datatype == "implicit":
+                    y_hat = model(x)#, history)
+                else:    
+                    y_hat = model(x)
                 predicts.extend(y_hat.tolist())
 
     return predicts

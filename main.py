@@ -1,6 +1,7 @@
 import argparse
 import ast
 from omegaconf import OmegaConf
+import numpy as np
 import pandas as pd
 import torch
 import torch.optim as optimizer_module
@@ -10,6 +11,81 @@ import src.data as data_module
 from src.train import train, test
 from src.train.catboost_trainer import train_catboost, test_catboost
 import src.models as model_module
+
+def run_kfold(args, data, setting=None):
+    datatype = args.model_args[args.model].datatype
+    
+    # 텐서 변환
+    all_X = torch.LongTensor(data['train'].drop('rating', axis=1).values)
+    all_y = torch.LongTensor(data['train']['rating'].values)
+    
+    # 인덱스 생성
+    # basic_kfold_split, basic_kfold_loader 
+    generate_kfolds_indices = getattr(data_module, f'generate_kfold_indices')
+    folds_indices = generate_kfolds_indices(args, data)
+    
+    # 테스트 데이터(예측용) 생성
+    test_X = torch.LongTensor(data['test'].values)
+    from torch.utils.data import TensorDataset, DataLoader
+    
+    test_dataset = TensorDataset(test_X)
+    test_loader = DataLoader(test_dataset, batch_size=args.dataloader.batch_size, shuffle=False)
+    
+    fold_predicts = []  # 각 폴드의 예측 결과 저장
+        
+    base_log_path = setting.get_log_path(args)
+    
+    # 폴드 별 학습 실행
+    for fold, (train_idx, valid_idx) in enumerate(folds_indices):
+        
+        import os
+        fold_log_path = os.path.join(base_log_path, f"fold{fold+1}")
+        fold_log_path = setting.make_dir(fold_log_path)
+        
+        logger = Logger(args, fold_log_path)
+        logger.save_args()
+        
+        print(f"\n================ [FOLD {fold+1}/{len(folds_indices)}] ================")
+        data_split_fn = getattr(data_module, f'{datatype}_kfold_split')  # e.g. basic_data_split()
+        data_loader_fn = getattr(data_module, f'{datatype}_kfold_loader')
+        
+        # 데이터 분할 & 로더 생성
+        X_train, y_train, X_valid, y_valid = data_split_fn(all_X, all_y, train_idx, valid_idx)
+        train_loader, valid_loader = data_loader_fn(args, X_train, y_train, X_valid, y_valid)
+        
+        # data 딕셔너리에 현재 폴드의 로더를 덮어씌움 (기존 train 함수와 호환성 유지)
+        data['train_dataloader'] = train_loader
+        data['valid_dataloader'] = valid_loader
+        data['test_dataloader'] = test_loader
+        
+        # 모델 초기화 (★ 매 폴드마다 새로 생성!)
+        if args.model in ['CatBoost', 'XGBoost']:
+            model = getattr(model_module, args.model)(args.model_args[args.model], data, global_seed=args.seed).to(args.device)
+        else:
+            model = getattr(model_module, args.model)(args.model_args[args.model], data).to(args.device)
+            
+        # 학습 진행 (기존 train 함수 재사용!)
+        # 로거 경로 등을 폴드별로 구분하고 싶다면 여기서 세팅을 약간 바꿔야 함
+        if args.model in ['CatBoost', 'XGBoost']:
+            model = train_catboost(args, model, data, logger, setting)
+        else:
+            model = train(args, model, data, logger, setting)
+            
+        # 추론 (Test set에 대한 예측)
+        # 각 폴드에서 학습된 모델로 테스트 셋을 예측
+        if args.model in ['CatBoost', 'XGBoost']:
+            fold_pred = test_catboost(args, model, data, setting)
+        else:
+            fold_pred = test(args, model, data, setting)
+            
+        fold_predicts.append(fold_pred)
+        
+    # 3. 앙상블 (Soft Voting / Average)
+    # 5번의 예측 결과를 평균냅니다.
+    print(f"\nEnsembling {len(folds_indices)} folds...")
+    final_predict = np.mean(fold_predicts, axis=0)
+    
+    return final_predict
 
 
 def main(args, wandb=None):
@@ -24,57 +100,65 @@ def main(args, wandb=None):
     print(f'--------------- {args.model} Load Data ---------------')
     data = data_load_fn(args)
 
-    print(f'--------------- {args.model} Train/Valid Split ---------------')
-    data = data_split_fn(args, data)
-    data = data_loader_fn(args, data)
-
-
-    ####################### Setting for Log
     setting = Setting()
-    
-    if args.predict == False:
-        log_path = setting.get_log_path(args)
-        logger = Logger(args, log_path)
-        logger.save_args()
-
-
-    ######################## Model
-    print(f'--------------- INIT {args.model} ---------------')
-    # models > __init__.py 에 저장된 모델만 사용 가능
-    # model = FM(args.model_args.FM, data).to('cuda')와 동일한 코드
-    if args.model in ['CatBoost', 'XGBoost']:
-        # CatBoost는 전역 seed를 사용하므로 args도 함께 전달
-        model = getattr(model_module, args.model)(args.model_args[args.model], data, global_seed=args.seed).to(args.device)
+    kfold = getattr(args, 'kfold', False)
+    # Kfold 사용시
+    if kfold:
+        print(f'--------------- {args.model} K-Fold Training ---------------')
+        predicts = run_kfold(args, data, setting)
+        # K-fold 수행 함수 호출
+    # Kfold 미사용시
     else:
-        model = getattr(model_module, args.model)(args.model_args[args.model], data).to(args.device)
-
-    # 만일 기존의 모델을 불러와서 학습을 시작하려면 resume을 true로 설정하고 resume_path에 모델을 지정하면 됨
-    if args.train.resume:
-        model.load_state_dict(torch.load(args.train.resume_path, weights_only=True))
+        print(f'--------------- {args.model} Train/Valid Split ---------------')
+        data = data_split_fn(args, data)
+        data = data_loader_fn(args, data)
 
 
-    ######################## TRAIN
-    if not args.predict:
-        print(f'--------------- {args.model} TRAINING ---------------')
+        ####################### Setting for Log
+        
+        if args.predict == False:
+            log_path = setting.get_log_path(args)
+            logger = Logger(args, log_path)
+            logger.save_args()
+
+
+        ######################## Model
+        print(f'--------------- INIT {args.model} ---------------')
+        # models > __init__.py 에 저장된 모델만 사용 가능
+        # model = FM(args.model_args.FM, data).to('cuda')와 동일한 코드
         if args.model in ['CatBoost', 'XGBoost']:
-            model = train_catboost(args, model, data, logger, setting)
+            # CatBoost는 전역 seed를 사용하므로 args도 함께 전달
+            model = getattr(model_module, args.model)(args.model_args[args.model], data, global_seed=args.seed).to(args.device)
         else:
-            model = train(args, model, data, logger, setting)
+            model = getattr(model_module, args.model)(args.model_args[args.model], data).to(args.device)
+
+        # 만일 기존의 모델을 불러와서 학습을 시작하려면 resume을 true로 설정하고 resume_path에 모델을 지정하면 됨
+        if args.train.resume:
+            model.load_state_dict(torch.load(args.train.resume_path, weights_only=True))
 
 
-    ######################## INFERENCE
-    if not args.predict:
-        print(f'--------------- {args.model} PREDICT ---------------')
-        if args.model in ['CatBoost', 'XGBoost']:
-            predicts = test_catboost(args, model, data, setting)
+        ######################## TRAIN
+        if not args.predict:
+            print(f'--------------- {args.model} TRAINING ---------------')
+            if args.model in ['CatBoost', 'XGBoost']:
+                model = train_catboost(args, model, data, logger, setting)
+            else:
+                model = train(args, model, data, logger, setting)
+
+
+        ######################## INFERENCE
+        if not args.predict:
+            print(f'--------------- {args.model} PREDICT ---------------')
+            if args.model in ['CatBoost', 'XGBoost']:
+                predicts = test_catboost(args, model, data, setting)
+            else:
+                predicts = test(args, model, data, setting)
         else:
-            predicts = test(args, model, data, setting)
-    else:
-        print(f'--------------- {args.model} PREDICT ---------------')
-        if args.model in ['CatBoost', 'XGBoost']:
-            predicts = test_catboost(args, model, data, setting, args.checkpoint)
-        else:
-            predicts = test(args, model, data, setting, args.checkpoint)
+            print(f'--------------- {args.model} PREDICT ---------------')
+            if args.model in ['CatBoost', 'XGBoost']:
+                predicts = test_catboost(args, model, data, setting, args.checkpoint)
+            else:
+                predicts = test(args, model, data, setting, args.checkpoint)
 
 
     ######################## SAVE PREDICT
@@ -106,7 +190,7 @@ if __name__ == "__main__":
     arg('--checkpoint', '-ckpt', '--ckpt', type=str, 
         help='학습을 생략할 때 사용할 모델을 설정할 수 있습니다. 단, 하이퍼파라미터 세팅을 모두 정확하게 입력해야 합니다.')
     arg('--model', '-m', '--m', type=str,
-        choices=['FM', 'FFM', 'DeepFM', 'NCF', 'WDN', 'DCN', 'Image_FM', 'Image_DeepFM', 'Text_FM', 'Text_DeepFM', 'ResNet_DeepFM', 'CatBoost', 'XGBoost', 'VAE', 'NCF_B', 'MF'],
+        choices=['FM', 'FFM', 'DeepFM', 'NCF', 'WDN', 'DCN', 'Image_FM', 'Image_DeepFM', 'Text_FM', 'Text_DeepFM', 'ResNet_DeepFM', 'CatBoost', 'XGBoost', 'VAE', 'NCF_B', 'MF', 'MF_SVD', 'Dual_GMF'],
         help='학습 및 예측할 모델을 선택할 수 있습니다.')
     arg('--seed', '-s', '--s', type=int,
         help='데이터분할 및 모델 초기화 시 사용할 시드를 설정할 수 있습니다.')
@@ -156,8 +240,10 @@ if __name__ == "__main__":
         
         config_yaml.model_args = OmegaConf.create({config_yaml.model : config_yaml.model_args[config_yaml.model]})
         
+        bias_weight_decay = config_yaml.optimizer.args.pop('bias_weight_decay', 0.0)
         config_yaml.optimizer.args = {k: v for k, v in config_yaml.optimizer.args.items() 
-                                    if k in getattr(optimizer_module, config_yaml.optimizer.type).__init__.__code__.co_varnames}
+                                    if (k in getattr(optimizer_module, config_yaml.optimizer.type).__init__.__code__.co_varnames)}
+        config_yaml.optimizer.args.bias_weight_decay = bias_weight_decay
         
         if config_yaml.lr_scheduler.use == False:
             del config_yaml.lr_scheduler.type, config_yaml.lr_scheduler.args

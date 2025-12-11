@@ -38,3 +38,13 @@ class SparseRMSELoss(nn.Module):
         criterion = MSELoss(reduction="sum")
         loss = torch.sqrt((criterion(y_hat, y) / (torch.count_nonzero(y) + self.eps)))
         return loss
+
+class CrossEntropy(nn.Module):
+    def __init__(self):
+        super(CrossEntropy, self).__init__()
+        
+    def forward(self, logits, target):
+        criterion = CrossEntropyLoss()
+        loss = criterion(logits, target)
+        return loss
+        

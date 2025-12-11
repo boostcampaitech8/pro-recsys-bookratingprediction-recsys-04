@@ -1,5 +1,6 @@
+import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold, KFold
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 
@@ -86,7 +87,6 @@ def basic_data_split(args, data):
     
     return data
 
-
 def basic_data_loader(args, data):
     """
     Parameters
@@ -151,3 +151,96 @@ def basic_data_loader(args, data):
     )
 
     return data
+
+
+def generate_kfold_indices(args, data):
+    """
+    user_id를 기준으로 Stratified K-Fold 인덱스 리스트 생성
+        
+    Parameters
+    ----------
+    args.kfold.n_splits : int
+        fold의 수
+    args.kfold.shuffle : bool
+        fold를 만들기 전 데이터 셔플 여부
+    args.seed: int
+        랜덤 시드
+    
+    Returns
+    -------
+    data : list
+        각 폴드별 train_idx 리스트와, valid_idx 리스트를 튜플로 묶은 리스트를 반환합니다
+    """
+    
+    # user_id 의 분포를 유지하며 kfold
+    stratify_target = data['train']['user_id'].values
+    
+    # split 함수를 위한 더미 데이터
+    X_dummy = np.zeros(len(stratify_target))
+    
+    # K-fold 객체 생성
+    skf = KFold(n_splits=args.kfold.n_splits, shuffle=args.kfold.shuffle, random_state=args.seed)
+    
+    # 인덱스 리스트 생성
+    folds_indices = []
+    
+    # skf.split은 인덱스(정수)를 반환
+    for train_idx, valid_idx in skf.split(X_dummy, stratify_target):
+        folds_indices.append((train_idx, valid_idx))
+    
+    return folds_indices
+
+def basic_kfold_split(all_X, all_y, train_idx, valid_idx):
+    """
+    전체 Tensor(all_X, all_y)를 인덱스 배열을 사용해 슬라이싱
+    DataFrame이 아닌 Tensor 상태에서 자르므로 속도 향상
+
+    Parameters
+    ----------
+    all_X: Tensor
+        data tensor
+    all_y: Tensor
+        label tensor
+    train_idx: list
+        각 폴드별 train indices
+    valid_idx: list
+        각 폴드별 valid indices
+    """
+    
+    # 학습용 데이터 슬라이싱
+    X_train = all_X[train_idx]
+    y_train = all_y[train_idx]
+    
+    # 검증용 데이터 슬라이싱
+    X_valid = all_X[valid_idx]
+    y_valid = all_y[valid_idx]
+    
+    return X_train, y_train, X_valid, y_valid
+
+def basic_kfold_loader(args, X_train, y_train, X_valid, y_valid):
+    
+    # TensorDataset 생성
+    train_dataset = TensorDataset(X_train, y_train)
+    valid_dataset = TensorDataset(X_valid, y_valid)
+    
+    # DataLoader 생성
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.dataloader.batch_size,
+        shuffle=True,
+        num_workers=args.dataloader.num_workers
+    )
+    
+    valid_loader = DataLoader(
+        valid_dataset,
+        batch_size=args.dataloader.batch_size,
+        shuffle=False, # 검증 데이터는 섞을 필요 없음
+        num_workers=args.dataloader.num_workers
+    )
+    
+    return train_loader, valid_loader
+    
+    
+
+
+    
