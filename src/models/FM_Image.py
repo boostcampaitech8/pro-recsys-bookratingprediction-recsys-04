@@ -49,9 +49,6 @@ class Image_DeepFM(nn.Module):
             output_layer=True,
         )
 
-        # ⬇️ 이 줄을 추가
-        self.sigmoid = nn.Sigmoid()
-
         self.final_fc = nn.Linear(2, 1)
 
     def forward(self, x):
@@ -128,8 +125,6 @@ class CLIP_DeepFM(nn.Module):
             output_layer=True,
         )
 
-        self.sigmoid = nn.Sigmoid()
-
         self.final_fc = nn.Linear(2, 1)
 
     def forward(self, x):
@@ -143,8 +138,17 @@ class CLIP_DeepFM(nn.Module):
             user_book_vector
         )  # (batch_size, num_fields, embed_dim)
 
+        # CLIP 전처리된 pixel_values 입력 (image_data.py에서 CLIP 전처리 추가됨)
         outputs = self.clip(pixel_values=img_vector)
         img_feature = outputs.pooler_output
+
+        # FM 경로: 이미지 -> embed_dim -> (B,1,E)
+        img_feature_fm = self.clip_embedding(img_feature)              # (B, E)
+        img_feature_fm = img_feature_fm.view(-1, 1, self.embed_dim)    # (B, 1, E)
+        dense_feature_fm = torch.cat([user_book_embedding, img_feature_fm], dim=1)  # (B, F+1, E)
+        second_order = self.fm(dense_feature_fm)                        # (B,)
+        output_fm = first_order.squeeze(1) + second_order               # (B,)
+
 
         # deep network를 통해 feature를 학습하는 부분
         dense_feature_deep = torch.cat(
@@ -156,7 +160,8 @@ class CLIP_DeepFM(nn.Module):
         )
         output_dnn = self.deep(dense_feature_deep).squeeze(1)
 
-        combined_output = torch.stack([output_fm, output_dnn], dim=1)  # (batch_size, 2)
-        raw_output = self.final_fc(combined_output).squeeze(1)  # (batch_size,)
+        # 결합
+        combined_output = torch.stack([output_fm, output_dnn], dim=1)  # (B, 2)
+        final_output = self.final_fc(combined_output).squeeze(1)       # (B,)
 
         return final_output

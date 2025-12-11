@@ -73,6 +73,39 @@ def image_vector(path, img_size):
     return transform(img).numpy()
 
 
+def clip_image_vector(path, img_size):
+    """
+    CLIP 모델용 전처리로 이미지를 벡터화합니다.
+
+    Parameters
+    ----------
+    path : str
+        이미지 경로
+    img_size : int
+        리사이즈 크기 (보통 224)
+
+    Returns
+    -------
+    np.ndarray
+        CLIP 정규화를 적용한 이미지 텐서 (C,H,W) numpy
+    """
+    img = Image.open(path)
+    # CLIP mean/std
+    clip_mean = [0.48145466, 0.4578275, 0.40821073]
+    clip_std = [0.26862954, 0.26130258, 0.27577711]
+    transform = v2.Compose(
+        [
+            v2.Lambda(lambda x: x.convert("RGB") if x.mode != "RGB" else x),
+            v2.Resize((img_size, img_size)),
+            v2.ToImage(),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize(mean=clip_mean, std=clip_std),
+        ]
+    )
+
+    return transform(img).numpy()
+
+
 def process_img_data(books, args):
     """
     Parameters
@@ -88,10 +121,14 @@ def process_img_data(books, args):
     books_ = books.copy()
     books_["img_path"] = books_["img_path"].apply(lambda x: f"data/{x}")
     img_vecs = []
+    # 모델에 따라 적절한 전처리 함수 선택
+    use_clip = getattr(args, 'model', None) == 'CLIP_DeepFM'
+    img_size = args.model_args[args.model].img_size
     for idx in tqdm(books_.index):
-        img_vec = image_vector(
-            books_.loc[idx, "img_path"], args.model_args[args.model].img_size
-        )
+        if use_clip:
+            img_vec = clip_image_vector(books_.loc[idx, "img_path"], img_size)
+        else:
+            img_vec = image_vector(books_.loc[idx, "img_path"], img_size)
         img_vecs.append(img_vec)
 
     books_["img_vector"] = img_vecs
