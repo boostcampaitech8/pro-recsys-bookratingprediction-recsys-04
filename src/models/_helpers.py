@@ -143,15 +143,15 @@ class CNN_Base(nn.Module):
                  dropout=0.2, batchnorm=True):
         super().__init__()
 
-        # CNN 구조 : Conv2d -> BatchNorm2d -> ReLU -> Dropout 
-        #           -> Conv2d -> BatchNorm2d -> ReLU -> Dropout -> MaxPool2d -> ...
+        # CNN 구조 : Conv2d -> BatchNorm2d -> GeLU -> Dropout 
+        #           -> Conv2d -> BatchNorm2d -> GeLU -> Dropout -> MaxPool2d -> ...
         self.cnn = nn.Sequential()
         in_channel_list = [input_size[0]] + channel_list[:-1]
         for idx, (in_channel, out_channel) in enumerate(zip(in_channel_list, channel_list)):
             self.cnn.add_module(f'conv{idx}', nn.Conv2d(in_channel, out_channel, kernel_size=kernel_size, stride=stride, padding=padding))
             if batchnorm:
                 self.cnn.add_module(f'batchnorm{idx}', nn.BatchNorm2d(out_channel))
-            self.cnn.add_module(f'relu{idx}', nn.ReLU())
+            self.cnn.add_module(f'relu{idx}', nn.GELU())
             if dropout > 0:
                 self.cnn.add_module(f'dropout{idx}', nn.Dropout(p=dropout))
             if idx % 2 == 1:
