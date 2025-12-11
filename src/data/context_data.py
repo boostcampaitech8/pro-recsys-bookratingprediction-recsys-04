@@ -41,84 +41,131 @@ def split_location(x: str) -> list:
 
 def process_context_data(users, books):
     """
-    Parameters
-    ----------
-    users : pd.DataFrame
-        users.csv를 인덱싱한 데이터
-    books : pd.DataFrame
-        books.csv를 인덱싱한 데이터
-    ratings1 : pd.DataFrame
-        train 데이터의 rating
-    ratings2 : pd.DataFrame
-        test 데이터의 rating
-
-    Returns
-    -------
-    label_to_idx : dict
-        데이터를 인덱싱한 정보를 담은 딕셔너리
-    idx_to_label : dict
-        인덱스를 다시 원래 데이터로 변환하는 정보를 담은 딕셔너리
-    train_df : pd.DataFrame
-        train 데이터
-    test_df : pd.DataFrame
-        test 데이터
+    users.csv와 books.csv를 전처리하여 반환합니다.
+    (location 문자열 컬럼이 없으므로 country/state/city만 사용)
     """
 
     users_ = users.copy()
     books_ = books.copy()
 
-    # 데이터 전처리 (전처리는 각자의 상황에 맞게 진행해주세요!)
+    # -----------------------------
+    # 📌 BOOKS 전처리
+    # -----------------------------
     books_["category"] = books_["category"].apply(
         lambda x: str2list(x)[0] if not pd.isna(x) else np.nan
     )
     books_["language"] = books_["language"].fillna(books_["language"].mode()[0])
     books_["publication_range"] = books_["year_of_publication"].apply(
         lambda x: x // 10 * 10
-    )  # 1990년대, 2000년대, 2010년대, ...
+    )
 
+    # -----------------------------
+    # 📌 USERS 전처리
+    # -----------------------------
     users_["age"] = users_["age"].fillna(users_["age"].mode()[0])
-    users_["age_range"] = users_["age"].apply(
-        lambda x: x // 10 * 10
-    )  # 10대, 20대, 30대, ...
+    users_["age_range"] = users_["age"].apply(lambda x: x // 10 * 10)
 
-    users_["location_list"] = users_["location"].apply(lambda x: split_location(x))
-    users_["location_country"] = users_["location_list"].apply(lambda x: x[0])
-    users_["location_state"] = users_["location_list"].apply(
-        lambda x: x[1] if len(x) > 1 else np.nan
-    )
-    users_["location_city"] = users_["location_list"].apply(
-        lambda x: x[2] if len(x) > 2 else np.nan
-    )
-    for idx, row in users_.iterrows():
-        if (not pd.isna(row["location_state"])) and pd.isna(row["location_country"]):
-            fill_country = users_[users_["location_state"] == row["location_state"]][
-                "location_country"
-            ].mode()
-            fill_country = fill_country[0] if len(fill_country) > 0 else np.nan
-            users_.loc[idx, "location_country"] = fill_country
-        elif (not pd.isna(row["location_city"])) and pd.isna(row["location_state"]):
-            if not pd.isna(row["location_country"]):
-                fill_state = users_[
-                    (users_["location_country"] == row["location_country"])
-                    & (users_["location_city"] == row["location_city"])
-                ]["location_state"].mode()
-                fill_state = fill_state[0] if len(fill_state) > 0 else np.nan
-                users_.loc[idx, "location_state"] = fill_state
-            else:
-                fill_state = users_[users_["location_city"] == row["location_city"]][
-                    "location_state"
-                ].mode()
-                fill_state = fill_state[0] if len(fill_state) > 0 else np.nan
-                fill_country = users_[users_["location_city"] == row["location_city"]][
-                    "location_country"
-                ].mode()
-                fill_country = fill_country[0] if len(fill_country) > 0 else np.nan
-                users_.loc[idx, "location_country"] = fill_country
-                users_.loc[idx, "location_state"] = fill_state
+    # 📌 location_country/state/city는 이미 users.csv에 존재함
+    # → 여기서는 결측치만 단순 처리
+    if "location_country" not in users_.columns:
+        users_["location_country"] = "unknown"
 
-    users_ = users_.drop(["location"], axis=1)
+    if "location_state" not in users_.columns:
+        users_["location_state"] = "unknown"
+
+    if "location_city" not in users_.columns:
+        users_["location_city"] = "unknown"
+
+    users_["location_country"] = users_["location_country"].fillna("unknown")
+    users_["location_state"] = users_["location_state"].fillna("unknown")
+    users_["location_city"] = users_["location_city"].fillna("unknown")
+
+    # 📌 기존 location 문자열 기반 파싱은 제거
+    # (users_["location_list"], split_location 등 삭제)
 
     return users_, books_
+
+
+# def process_context_data(users, books):
+#     """
+#     Parameters
+#     ----------
+#     users : pd.DataFrame
+#         users.csv를 인덱싱한 데이터
+#     books : pd.DataFrame
+#         books.csv를 인덱싱한 데이터
+#     ratings1 : pd.DataFrame
+#         train 데이터의 rating
+#     ratings2 : pd.DataFrame
+#         test 데이터의 rating
+
+#     Returns
+#     -------
+#     label_to_idx : dict
+#         데이터를 인덱싱한 정보를 담은 딕셔너리
+#     idx_to_label : dict
+#         인덱스를 다시 원래 데이터로 변환하는 정보를 담은 딕셔너리
+#     train_df : pd.DataFrame
+#         train 데이터
+#     test_df : pd.DataFrame
+#         test 데이터
+#     """
+
+#     users_ = users.copy()
+#     books_ = books.copy()
+
+#     # 데이터 전처리 (전처리는 각자의 상황에 맞게 진행해주세요!)
+#     books_["category"] = books_["category"].apply(
+#         lambda x: str2list(x)[0] if not pd.isna(x) else np.nan
+#     )
+#     books_["language"] = books_["language"].fillna(books_["language"].mode()[0])
+#     books_["publication_range"] = books_["year_of_publication"].apply(
+#         lambda x: x // 10 * 10
+#     )  # 1990년대, 2000년대, 2010년대, ...
+
+#     users_["age"] = users_["age"].fillna(users_["age"].mode()[0])
+#     users_["age_range"] = users_["age"].apply(
+#         lambda x: x // 10 * 10
+#     )  # 10대, 20대, 30대, ...
+
+#     users_["location_list"] = users_["location"].apply(lambda x: split_location(x))
+#     users_["location_country"] = users_["location_list"].apply(lambda x: x[0])
+#     users_["location_state"] = users_["location_list"].apply(
+#         lambda x: x[1] if len(x) > 1 else np.nan
+#     )
+#     users_["location_city"] = users_["location_list"].apply(
+#         lambda x: x[2] if len(x) > 2 else np.nan
+#     )
+#     for idx, row in users_.iterrows():
+#         if (not pd.isna(row["location_state"])) and pd.isna(row["location_country"]):
+#             fill_country = users_[users_["location_state"] == row["location_state"]][
+#                 "location_country"
+#             ].mode()
+#             fill_country = fill_country[0] if len(fill_country) > 0 else np.nan
+#             users_.loc[idx, "location_country"] = fill_country
+#         elif (not pd.isna(row["location_city"])) and pd.isna(row["location_state"]):
+#             if not pd.isna(row["location_country"]):
+#                 fill_state = users_[
+#                     (users_["location_country"] == row["location_country"])
+#                     & (users_["location_city"] == row["location_city"])
+#                 ]["location_state"].mode()
+#                 fill_state = fill_state[0] if len(fill_state) > 0 else np.nan
+#                 users_.loc[idx, "location_state"] = fill_state
+#             else:
+#                 fill_state = users_[users_["location_city"] == row["location_city"]][
+#                     "location_state"
+#                 ].mode()
+#                 fill_state = fill_state[0] if len(fill_state) > 0 else np.nan
+#                 fill_country = users_[users_["location_city"] == row["location_city"]][
+#                     "location_country"
+#                 ].mode()
+#                 fill_country = fill_country[0] if len(fill_country) > 0 else np.nan
+#                 users_.loc[idx, "location_country"] = fill_country
+#                 users_.loc[idx, "location_state"] = fill_state
+
+#     users_ = users_.drop(["location"], axis=1)
+
+#     return users_, books_
 
 
 def context_data_load(args):

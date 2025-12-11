@@ -9,9 +9,9 @@ from scipy.optimize import minimize
 # =================================================================
 
 OOF_FILE_LIST = [
-    "../saved/submit/20251209_015500_NCF_kfold_5_OOF.csv",
-    "../saved/submit/20251209_070337_FM_kfold_5_OOF.csv",
-    "../saved/submit/20251209_062026_Image_DeepFM_kfold_5_OOF.csv",
+    "../saved/submit/20251210_122552_NCF_kfold_10_OOF.csv",
+    "../saved/submit/20251210_120329_Image_DeepFM_kfold_10_OOF.csv",
+    "../saved/submit/20251210_121449_FM_kfold_10_OOF.csv",
     # 여기에 계속 추가 가능...
 ]
 

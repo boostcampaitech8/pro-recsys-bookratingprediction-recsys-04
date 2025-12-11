@@ -160,12 +160,17 @@ def main(args, wandb=None):
             print(f"Save Predict: {filename}")
             submission.to_csv(filename, index=False)
 
-            # 3) [NEW] Save OOF Predictions
+            # 3) [NEW] Save OOF Predictions (필요 컬럼만 저장)
             print(f"--------------- SAVE OOF PREDICT ---------------")
-            # 원본 Train 데이터에 예측값을 붙여서 저장 (rating: 실제값, predict: 예측값)
-            # 순서는 원본 train_df 순서 그대로 유지됨 (oof_predictions를 인덱스 맞춰서 채웠으므로)
-            oof_df = train_df.copy()
-            oof_df["predict"] = oof_predictions
+
+            oof_df = pd.DataFrame(
+                {
+                    "user_id": train_df["user_id"].values,
+                    "isbn": train_df["isbn"].values,
+                    "rating": train_df["rating"].values,
+                    "predict": oof_predictions,
+                }
+            )
 
             oof_filename = filename.replace(".csv", "_OOF.csv")
             print(f"Save OOF Predict: {oof_filename}")
