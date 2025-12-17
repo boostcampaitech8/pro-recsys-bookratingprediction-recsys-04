@@ -1,0 +1,167 @@
+import numpy as np
+import torch
+import torch.nn as nn
+from ._helpers import (
+    FeaturesLinear,
+    FeaturesEmbedding,
+    FMLayer_Dense,
+    CNN_Base,
+    MLP_Base,
+)
+from transformers import CLIPVisionModel
+
+class Image_DeepFM(nn.Module):
+    def __init__(self, args, data):
+        super().__init__()
+        self.field_dims = data["field_dims"]
+        self.embed_dim = args.embed_dim
+
+        # sparse feature를 위한 선형 결합 부분
+        self.linear = FeaturesLinear(self.field_dims)
+
+        # sparse feature를 dense하게 임베딩하는 부분
+        self.embedding = FeaturesEmbedding(self.field_dims, args.embed_dim)
+
+        # 이미지 feature를 cnn을 통해 임베딩하는 부분
+        self.cnn = CNN_Base(
+            input_size=(3, args.img_size, args.img_size),  # default: (3, 224, 224)
+            channel_list=args.channel_list,  # default: [4, 8, 16]
+            kernel_size=args.kernel_size,  # default: 3
+            stride=args.stride,  # default: 2
+            padding=args.padding,  # default: 1
+            batchnorm=args.cnn_batchnorm,  # default: True
+            dropout=args.cnn_dropout,  # default: 0.2
+        )
+
+        # cnn을 통해 임베딩된 이미지 벡터가 fm에 사용될 수 있도록 embed_dim 크기로 변환하는 부분
+        self.cnn_embedding = nn.Linear(np.prod(self.cnn.output_dim), args.embed_dim)
+
+        # dense feature 사이의 상호작용을 효율적으로 계산하는 부분
+        self.fm = FMLayer_Dense()
+
+        # deep network를 통해 dense feature를 학습하는 부분
+        self.deep = MLP_Base(
+            input_dim=(args.embed_dim * len(self.field_dims))
+            + np.prod(self.cnn.output_dim),
+            embed_dims=args.mlp_dims,
+            batchnorm=args.batchnorm,
+            dropout=args.dropout,
+            output_layer=True,
+        )
+
+        self.final_fc = nn.Linear(2, 1)
+
+    def forward(self, x):
+        user_book_vector, img_vector = x[0], x[1]
+
+        # first-order interaction / sparse feature only
+        first_order = self.linear(user_book_vector)  # (batch_size, 1)
+
+        # sparse to dense
+        user_book_embedding = self.embedding(
+            user_book_vector
+        )  # (batch_size, num_fields, embed_dim)
+
+        # image to dense
+        img_feature = self.cnn(img_vector)  # (batch_size, out_channels, H, W)
+        img_feature_deep = img_feature.view(
+            -1, np.prod(self.cnn.output_dim)
+        )  # (batch_size, out_channels * H * W)
+        img_feature_fm = self.cnn_embedding(img_feature_deep)  # (batch_size, embed_dim)
+        img_feature_fm = img_feature_fm.view(
+            -1, 1, self.embed_dim
+        )  # (batch_size, 1, embed_dim)
+
+        # second-order interaction / dense feature
+        dense_feature_fm = torch.cat(
+            [user_book_embedding, img_feature_fm], dim=1
+        )  # (batch_size, num_fields + 1, embed_dim)
+        second_order = self.fm(dense_feature_fm)  # (batch_size,)
+
+        output_fm = first_order.squeeze(1) + second_order  # (batch_size,)
+        dense_feature_deep = torch.cat(
+            [
+                user_book_embedding.view(-1, len(self.field_dims) * self.embed_dim),
+                img_feature_deep,
+            ],
+            dim=1,
+        )
+        output_dnn = self.deep(dense_feature_deep).squeeze(1)  # (batch_size,)
+
+        # ⬇️ [핵심 수정] FM과 DNN 출력을 결합하여 final_fc 레이어를 통과시킵니다.
+        combined_output = torch.stack([output_fm, output_dnn], dim=1)  # (batch_size, 2)
+        final_output = self.final_fc(combined_output).squeeze(1)  # (batch_size,)
+
+        return final_output
+
+class CLIP_DeepFM(nn.Module):
+    def __init__(self, args, data):
+        super().__init__()
+        self.field_dims = data["field_dims"]
+        self.embed_dim = args.embed_dim
+
+        # sparse feature를 위한 선형 결합 부분
+        self.linear = FeaturesLinear(self.field_dims)
+
+        # sparse feature를 dense하게 임베딩하는 부분
+        self.embedding = FeaturesEmbedding(self.field_dims, args.embed_dim)
+
+        # CLIP의 이미지 인코더 가져옴
+        self.clip = CLIPVisionModel.from_pretrained("openai/clip-vit-base-patch32")
+        
+        # CLIP ViT-Base의 출력 차원은 768입니다.
+        self.clip_output_dim = 768
+        self.clip_embedding = nn.Linear(self.cnn_output_dim, args.embed_dim)
+
+        # dense feature 사이의 상호작용을 효율적으로 계산하는 부분
+        self.fm = FMLayer_Dense()
+
+        # deep network를 통해 dense feature를 학습하는 부분
+        self.deep = MLP_Base(
+            input_dim=(args.embed_dim * len(self.field_dims)) + in_features,
+            embed_dims=args.mlp_dims,
+            batchnorm=args.batchnorm,
+            dropout=args.dropout,
+            output_layer=True,
+        )
+
+        self.final_fc = nn.Linear(2, 1)
+
+    def forward(self, x):
+        user_book_vector, img_vector = x[0], x[1]
+
+        # first-order interaction / sparse feature only
+        first_order = self.linear(user_book_vector)  # (batch_size, 1)
+
+        # sparse to dense
+        user_book_embedding = self.embedding(
+            user_book_vector
+        )  # (batch_size, num_fields, embed_dim)
+
+        # CLIP 전처리된 pixel_values 입력 (image_data.py에서 CLIP 전처리 추가됨)
+        outputs = self.clip(pixel_values=img_vector)
+        img_feature = outputs.pooler_output
+
+        # FM 경로: 이미지 -> embed_dim -> (B,1,E)
+        img_feature_fm = self.clip_embedding(img_feature)              # (B, E)
+        img_feature_fm = img_feature_fm.view(-1, 1, self.embed_dim)    # (B, 1, E)
+        dense_feature_fm = torch.cat([user_book_embedding, img_feature_fm], dim=1)  # (B, F+1, E)
+        second_order = self.fm(dense_feature_fm)                        # (B,)
+        output_fm = first_order.squeeze(1) + second_order               # (B,)
+
+
+        # deep network를 통해 feature를 학습하는 부분
+        dense_feature_deep = torch.cat(
+            [
+                user_book_embedding.view(-1, len(self.field_dims) * self.embed_dim),
+                img_feature,
+            ],
+            dim=1,
+        )
+        output_dnn = self.deep(dense_feature_deep).squeeze(1)
+
+        # 결합
+        combined_output = torch.stack([output_fm, output_dnn], dim=1)  # (B, 2)
+        final_output = self.final_fc(combined_output).squeeze(1)       # (B,)
+
+        return final_output
