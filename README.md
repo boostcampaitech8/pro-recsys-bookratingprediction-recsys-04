@@ -1,5 +1,5 @@
 🥇 **최종 1위 (Private Leaderboard Winner)**  
-<br><br>
+<br>
 
 # 📚 Book Rating Prediction
 <br>
